@@ -4,6 +4,7 @@ import {
   aggregateGroceries,
   challengeEndDate,
   completionForDay,
+  createDemoState,
   createInitialState,
   dayNumber,
   progressPictureDays,
@@ -11,6 +12,14 @@ import {
 } from "@/lib/soft-challenge";
 
 describe("75 Soft calculations", () => {
+  it("creates a generic active demo state without personal data", () => {
+    const state = createDemoState();
+
+    expect(state.settings.active).toBe(true);
+    expect(state.logs[Object.keys(state.logs)[0]]?.notes).toBe("Synthetic demo entry");
+    expect(state.assignments).toHaveLength(2);
+  });
+
   it("counts the start date as day one and ends on day 75", () => {
     expect(dayNumber("2026-11-01", "2026-11-01")).toBe(1);
     expect(dayNumber("2026-11-01", "2027-01-14")).toBe(75);

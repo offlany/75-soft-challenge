@@ -39,6 +39,7 @@ import {
   aggregateGroceries,
   challengeEndDate,
   completionForDay,
+  createDemoState,
   createInitialState,
   dayNumber,
   formatDate,
@@ -56,6 +57,8 @@ import {
   type Recipe,
   type SoftState
 } from "@/lib/soft-challenge";
+import { loadBrowserState, saveBrowserState } from "@/lib/browser-persistence";
+import { parseSoftState, serializeSoftState } from "@/lib/soft-state-io";
 
 type View = "overview" | "calendar" | "journal" | "recipes" | "planner" | "groceries" | "progress" | "settings";
 
@@ -79,6 +82,8 @@ const habitLabels: Record<HabitId, { title: string; detail: string; icon: typeof
 
 const weekdayNames = ["H", "K", "Sze", "Cs", "P", "Szo", "V"];
 const fullWeekdayNames = ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"];
+const isStaticMode = process.env.NEXT_PUBLIC_STATIC_MODE === "true";
+const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 function defaultLog(log?: DayLog): DayLog {
   return log ?? { alcohol: "unknown" };
@@ -103,36 +108,70 @@ function SoftChallengeApp() {
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [plannerWeek, setPlannerWeek] = useState(weekStart(localDateString()));
   const [loaded, setLoaded] = useState(false);
-  const [saveState, setSaveState] = useState<"mentve" | "mentés…">("mentve");
+  const [saveState, setSaveState] = useState<"mentve" | "mentés…" | "mentés sikertelen" | "helyi mentéssel">("mentve");
+  const [storageError, setStorageError] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/state")
-      .then((response) => response.json())
-      .then((incoming: SoftState) => {
-        if (!cancelled && incoming?.settings) setState({ ...createInitialState(), ...incoming });
-      })
-      .catch(() => {
-        try {
-          const saved = window.localStorage.getItem("75-soft-fallback");
-          if (!cancelled && saved) setState({ ...createInitialState(), ...(JSON.parse(saved) as SoftState) });
-        } catch {
-          return undefined;
+    const loadState = async () => {
+      try {
+        if (isStaticMode) {
+          const result = await loadBrowserState();
+          if (!cancelled && result.state) setState({ ...createInitialState(), ...result.state });
+          if (!cancelled && !result.state && isDemoMode) setState(createDemoState());
+          return;
         }
-      })
-      .finally(() => { if (!cancelled) setLoaded(true); });
+
+        const response = await fetch("/api/state");
+        if (!response.ok) throw new Error("The local state API is unavailable.");
+        const incoming = await response.json() as SoftState;
+        if (!cancelled && incoming?.settings) setState({ ...createInitialState(), ...incoming });
+      } catch {
+        try {
+          const result = await loadBrowserState();
+          if (!cancelled && result.state) setState({ ...createInitialState(), ...result.state });
+          if (!cancelled && !isStaticMode) setStorageError("A helyi SQLite mentés nem érhető el; böngészős biztonsági mentésből töltöttem be az adatokat.");
+        } catch {
+          if (!cancelled) setStorageError(isStaticMode ? "A böngészős mentés nem érhető el. Ellenőrizd a böngésző tárhelybeállításait." : "A helyi és a böngészős mentés sem érhető el.");
+        }
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    };
+    void loadState();
     return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     if (!loaded) return;
     setSaveState("mentés…");
-    window.localStorage.setItem("75-soft-fallback", JSON.stringify(state));
     const timeout = window.setTimeout(() => {
-      fetch("/api/state", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state) })
-        .catch(() => undefined)
-        .finally(() => setSaveState("mentve"));
+      const save = async () => {
+        try {
+          if (isStaticMode) {
+            await saveBrowserState(state);
+            setStorageError("");
+            setSaveState("mentve");
+            return;
+          }
+
+          const response = await fetch("/api/state", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state) });
+          if (!response.ok) throw new Error("The local state API rejected the save.");
+          setStorageError("");
+          setSaveState("mentve");
+        } catch {
+          try {
+            await saveBrowserState(state);
+            setSaveState("helyi mentéssel");
+            setStorageError("A helyi SQLite mentés nem sikerült; a böngészős biztonsági mentés elkészült.");
+          } catch {
+            setSaveState("mentés sikertelen");
+            setStorageError("A mentés nem sikerült. Ellenőrizd a böngésző tárhelybeállításait vagy a helyi szervert.");
+          }
+        }
+      };
+      void save();
     }, 300);
     return () => window.clearTimeout(timeout);
   }, [state, loaded]);
@@ -197,6 +236,7 @@ function SoftChallengeApp() {
           <div className="topbar-actions"><span className="save-status"><span className="save-dot" /> {saveState}</span><button className="icon-button" type="button" aria-label="Értesítések"><Bell size={18} /></button><button className="help-button" type="button"><CircleHelp size={16} /> Segítség</button></div>
         </header>
         <div className="content-wrap">
+          {storageError ? <div className="storage-warning" role="alert">{storageError}</div> : null}
           {view === "overview" && <Overview state={state} today={activeDate} currentDay={currentDay} elapsed={elapsed} timePercent={timePercent} dailyCompletion={dailyCompletion} nextPicture={nextPicture} onUpdateLog={updateLog} onGoToDate={goToDate} onNavigate={setView} />}
           {view === "journal" && <Journal state={state} date={selectedDate} onDateChange={setSelectedDate} onUpdateLog={updateLog} onBack={() => setView("overview")} />}
           {view === "calendar" && <CalendarView state={state} calendarDate={calendarDate} onCalendarDate={setCalendarDate} onGoToDate={goToDate} />}
@@ -258,6 +298,6 @@ function ProgressView({ state, elapsed }: { state: SoftState; elapsed: number })
 
 function ProgressPhotoFab({ onUpdate }: { onUpdate: (updater: (current: SoftState) => SoftState) => void }) { const [date, setDate] = useState(localDateString()); const [open, setOpen] = useState(false); const upload = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file || !file.type.startsWith("image/")) return; const reader = new FileReader(); reader.onload = () => { onUpdate((current) => ({ ...current, photos: [...current.photos, { id: makeId("photo"), date, dataUrl: String(reader.result) }] })); setOpen(false); }; reader.readAsDataURL(file); }; return <div className="photo-fab-wrap"><button type="button" className="photo-fab" onClick={() => setOpen((value) => !value)}><ImagePlus size={17} /> Progress kép</button>{open ? <div className="photo-fab-panel"><div className="eyebrow">ÚJ EMLÉK</div><h4>Őrizd meg ezt a napot.</h4><label className="field">Dátum<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><label className="upload-drop"><ImagePlus size={19} /><span>Kép feltöltése</span><small>JPG, PNG vagy WEBP · csak helyben</small><input type="file" accept="image/png,image/jpeg,image/webp" onChange={upload} /></label></div> : null}</div>; }
 
-function SettingsView({ state, onUpdate }: { state: SoftState; onUpdate: (updater: (current: SoftState) => SoftState) => void }) { const settings = state.settings; const [draft, setDraft] = useState(settings); const [notice, setNotice] = useState(""); const save = () => { onUpdate((current) => ({ ...current, settings: draft })); setNotice("A beállításaid mentve."); window.setTimeout(() => setNotice(""), 2500); }; const exportData = () => { const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "75-soft-mentes.json"; anchor.click(); URL.revokeObjectURL(url); }; const importData = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { try { const imported = JSON.parse(String(reader.result)) as SoftState; if (imported.settings && imported.recipes) { onUpdate(() => imported); setNotice("A mentés visszaállítva."); } } catch { setNotice("Ezt a fájlt nem sikerült beolvasni."); } }; reader.readAsText(file); }; return <div className="page-enter"><PageHeader eyebrow="BEÁLLÍTÁSOK" title="A kihívásod, a szabályaid" description="Bármikor finomhangolhatod. A korábbi naplóid megmaradnak." action={notice ? <span className="saved-notice"><CheckCircle2 size={16} /> {notice}</span> : <button className="primary-button" type="button" onClick={save}>Változtatások mentése <Check size={16} /></button>} /><div className="settings-layout"><div><section className="card settings-card"><div className="card-heading"><div><div className="eyebrow">ALAPADATOK</div><h3>A kihívás idővonala</h3></div><span className="round-icon lavender"><CalendarDays size={17} /></span></div><div className="form-grid three"><Field label="Kezdő dátum"><input type="date" value={draft.startDate} onChange={(event) => setDraft({ ...draft, startDate: event.target.value })} /></Field><Field label="Kezdés időpontja"><input type="time" value={draft.startTime} onChange={(event) => setDraft({ ...draft, startTime: event.target.value })} /></Field><Field label="Befejezés"><input value={formatDate(challengeEndDate(draft.startDate), { year: "numeric", month: "long", day: "numeric" })} readOnly /></Field></div></section><section className="card settings-card"><div className="card-heading"><div><div className="eyebrow">SZOKÁSOK</div><h3>Mi legyen benne a napjaidban?</h3></div></div><div className="settings-habit-list">{(Object.keys(habitLabels) as HabitId[]).map((habit) => { const item = habitLabels[habit]; return <label key={habit} className="settings-habit-row"><span className={`journal-habit-icon ${habit}`}><AppIcon icon={item.icon} size={17} /></span><span><strong>{item.title}</strong><small>{item.detail}</small></span><input type="checkbox" checked={draft.habits[habit]} onChange={() => setDraft({ ...draft, habits: { ...draft.habits, [habit]: !draft.habits[habit] } })} /><span className="toggle small-toggle" /></label>; })}</div></section></div><aside><section className="card settings-card"><div className="eyebrow">CÉLOK ÉS RUGALMASSÁG</div><Field label="Víz cél (liter / nap)"><input type="number" min="0.5" step="0.25" value={draft.waterTarget} onChange={(event) => setDraft({ ...draft, waterTarget: Number(event.target.value) })} /></Field><Field label="Progress kép minden ennyi napban"><input type="number" min="1" value={draft.pictureInterval} onChange={(event) => setDraft({ ...draft, pictureInterval: Math.max(1, Number(event.target.value)) })} /></Field><Field label="Heti pihenőnap"><select value={draft.restDay} onChange={(event) => setDraft({ ...draft, restDay: event.target.value })}>{fullWeekdayNames.map((day) => <option key={day}>{day.toLocaleLowerCase("hu-HU")}</option>)}</select></Field><label className="toggle-row"><input type="checkbox" checked={draft.includeDayOnePicture} onChange={(event) => setDraft({ ...draft, includeDayOnePicture: event.target.checked })} /><span className="toggle" /><span><strong>Induló kép az 1. napon</strong><small>Opcionális emlék a kezdésről.</small></span></label></section><section className="card settings-card data-card"><div className="eyebrow">ADATBIZTONSÁG</div><h3>Helyi mentés</h3><p className="muted">Az adataid helyben, SQLite adatbázisban maradnak. Készíts időnként saját biztonsági mentést.</p><div className="data-actions"><button type="button" className="secondary-button" onClick={exportData}>Exportálás</button><label className="secondary-button">Importálás<input type="file" accept="application/json" hidden onChange={importData} /></label></div></section></aside></div></div>; }
+function SettingsView({ state, onUpdate }: { state: SoftState; onUpdate: (updater: (current: SoftState) => SoftState) => void }) { const settings = state.settings; const [draft, setDraft] = useState(settings); const [notice, setNotice] = useState(""); const save = () => { onUpdate((current) => ({ ...current, settings: draft })); setNotice("A beállításaid mentve."); window.setTimeout(() => setNotice(""), 2500); }; const exportData = () => { const blob = new Blob([serializeSoftState(state)], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "75-soft-mentes.json"; anchor.click(); URL.revokeObjectURL(url); }; const importData = (event: ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { const imported = parseSoftState(String(reader.result)); if (imported) { onUpdate(() => imported); setNotice("A mentés visszaállítva."); } else { setNotice("A fájl nem tartalmaz érvényes mentést."); } }; reader.readAsText(file); }; return <div className="page-enter"><PageHeader eyebrow="BEÁLLÍTÁSOK" title="A kihívásod, a szabályaid" description="Bármikor finomhangolhatod. A korábbi naplóid megmaradnak." action={notice ? <span className="saved-notice"><CheckCircle2 size={16} /> {notice}</span> : <button className="primary-button" type="button" onClick={save}>Változtatások mentése <Check size={16} /></button>} /><div className="settings-layout"><div><section className="card settings-card"><div className="card-heading"><div><div className="eyebrow">ALAPADATOK</div><h3>A kihívás idővonala</h3></div><span className="round-icon lavender"><CalendarDays size={17} /></span></div><div className="form-grid three"><Field label="Kezdő dátum"><input type="date" value={draft.startDate} onChange={(event) => setDraft({ ...draft, startDate: event.target.value })} /></Field><Field label="Kezdés időpontja"><input type="time" value={draft.startTime} onChange={(event) => setDraft({ ...draft, startTime: event.target.value })} /></Field><Field label="Befejezés"><input value={formatDate(challengeEndDate(draft.startDate), { year: "numeric", month: "long", day: "numeric" })} readOnly /></Field></div></section><section className="card settings-card"><div className="card-heading"><div><div className="eyebrow">SZOKÁSOK</div><h3>Mi legyen benne a napjaidban?</h3></div></div><div className="settings-habit-list">{(Object.keys(habitLabels) as HabitId[]).map((habit) => { const item = habitLabels[habit]; return <label key={habit} className="settings-habit-row"><span className={`journal-habit-icon ${habit}`}><AppIcon icon={item.icon} size={17} /></span><span><strong>{item.title}</strong><small>{item.detail}</small></span><input type="checkbox" checked={draft.habits[habit]} onChange={() => setDraft({ ...draft, habits: { ...draft.habits, [habit]: !draft.habits[habit] } })} /><span className="toggle small-toggle" /></label>; })}</div></section></div><aside><section className="card settings-card"><div className="eyebrow">CÉLOK ÉS RUGALMASSÁG</div><Field label="Víz cél (liter / nap)"><input type="number" min="0.5" step="0.25" value={draft.waterTarget} onChange={(event) => setDraft({ ...draft, waterTarget: Number(event.target.value) })} /></Field><Field label="Progress kép minden ennyi napban"><input type="number" min="1" value={draft.pictureInterval} onChange={(event) => setDraft({ ...draft, pictureInterval: Math.max(1, Number(event.target.value)) })} /></Field><Field label="Heti pihenőnap"><select value={draft.restDay} onChange={(event) => setDraft({ ...draft, restDay: event.target.value })}>{fullWeekdayNames.map((day) => <option key={day}>{day.toLocaleLowerCase("hu-HU")}</option>)}</select></Field><label className="toggle-row"><input type="checkbox" checked={draft.includeDayOnePicture} onChange={(event) => setDraft({ ...draft, includeDayOnePicture: event.target.checked })} /><span className="toggle" /><span><strong>Induló kép az 1. napon</strong><small>Opcionális emlék a kezdésről.</small></span></label></section><section className="card settings-card data-card"><div className="eyebrow">ADATBIZTONSÁG</div><h3>Helyi mentés</h3><p className="muted">{isStaticMode ? "A GitHub Pages változat IndexedDB-ben tárolja az adatokat, localStorage tartalékkal. Készíts időnként saját biztonsági mentést." : "A helyi változat SQLite adatbázisban tárolja az adatokat. Készíts időnként saját biztonsági mentést."}</p><div className="data-actions"><button type="button" className="secondary-button" onClick={exportData}>Exportálás</button><label className="secondary-button">Importálás<input type="file" accept="application/json" hidden onChange={importData} /></label></div></section></aside></div></div>; }
 
 export default SoftChallengeApp;
