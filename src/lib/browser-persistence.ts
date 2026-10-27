@@ -32,7 +32,10 @@ function openDatabase(indexedDb: IDBFactory): Promise<IDBDatabase> {
       if (!request.result.objectStoreNames.contains(STORE_NAME)) request.result.createObjectStore(STORE_NAME);
     };
     request.onerror = () => reject(request.error ?? new Error("IndexedDB could not be opened."));
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
   });
 }
 
@@ -65,6 +68,10 @@ async function writeIndexedDb(indexedDb: IDBFactory, state: SoftState): Promise<
     transaction.onerror = () => {
       database.close();
       reject(transaction.error ?? new Error("IndexedDB state could not be saved."));
+    };
+    transaction.onabort = () => {
+      database.close();
+      reject(transaction.error ?? new Error("IndexedDB state transaction was aborted."));
     };
   });
 }

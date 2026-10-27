@@ -39,8 +39,8 @@ import {
   aggregateGroceries,
   challengeEndDate,
   completionForDay,
-  createDemoState,
   createInitialState,
+  createRestartState,
   dayNumber,
   formatDate,
   isDayHabitComplete,
@@ -83,7 +83,6 @@ const habitLabels: Record<HabitId, { title: string; detail: string; icon: typeof
 const weekdayNames = ["H", "K", "Sze", "Cs", "P", "Szo", "V"];
 const fullWeekdayNames = ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"];
 const isStaticMode = process.env.NEXT_PUBLIC_STATIC_MODE === "true";
-const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 function defaultLog(log?: DayLog): DayLog {
   return log ?? { alcohol: "unknown" };
@@ -99,6 +98,10 @@ function ProgressBar({ value, className = "" }: { value: number; className?: str
 
 function Field({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
   return <label className={`field ${className}`}><span>{label}</span>{children}</label>;
+}
+
+function RestartChallengeCard({ onRestart }: { onRestart: () => void }) {
+  return <section className="card restart-card"><div className="eyebrow">ÚJ KIHÍVÁS</div><h3>Kezdd újra biztonságosan</h3><p className="muted">A naplók, étkezési tervek, bevásárlási állapotok és progress képek törlődnek. A receptjeid megmaradnak.</p><button type="button" className="danger-button" onClick={onRestart}><Trash2 size={16} /> Újrakezdés</button></section>;
 }
 
 function SoftChallengeApp() {
@@ -119,7 +122,6 @@ function SoftChallengeApp() {
         if (isStaticMode) {
           const result = await loadBrowserState();
           if (!cancelled && result.state) setState({ ...createInitialState(), ...result.state });
-          if (!cancelled && !result.state && isDemoMode) setState(createDemoState());
           return;
         }
 
@@ -200,6 +202,14 @@ function SoftChallengeApp() {
     setView("overview");
   };
 
+  const restartChallenge = () => {
+    if (!window.confirm("Újrakezdöd a kihívást? Ez törli a naplókat, terveket és progress képeket, de a receptjeid megmaradnak.")) return;
+    const nextState = createRestartState(state);
+    updateState(() => nextState);
+    setSelectedDate(nextState.settings.startDate);
+    setView("overview");
+  };
+
   const goToDate = (date: string) => {
     setSelectedDate(date);
     setView("journal");
@@ -246,6 +256,7 @@ function SoftChallengeApp() {
           {view === "progress" && <ProgressView state={state} elapsed={elapsed} />}
           {view === "progress" && <ProgressPhotoFab onUpdate={updateState} />}
           {view === "settings" && <SettingsView state={state} onUpdate={updateState} />}
+          {view === "settings" && <RestartChallengeCard onRestart={restartChallenge} />}
         </div>
       </main>
     </div>

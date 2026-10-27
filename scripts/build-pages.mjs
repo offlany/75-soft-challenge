@@ -14,7 +14,7 @@ let exitCode = 1;
 try {
   const result = spawnSync(nextBinary, ["build"], {
     cwd: projectRoot,
-    env: { ...process.env, NEXT_PUBLIC_STATIC_MODE: "true", NEXT_PUBLIC_DEMO_MODE: "true" },
+    env: { ...process.env, NEXT_PUBLIC_STATIC_MODE: "true" },
     stdio: "inherit"
   });
   exitCode = result.status ?? 1;

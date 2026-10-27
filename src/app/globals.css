@@ -121,3 +121,8 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
 .input-with-suffix span { top: 50%; right: 39px; transform: translateY(-50%); line-height: 1; pointer-events: none; white-space: nowrap; }
 .habit-input-inline input[type="number"], .habit-inputs input[type="number"], .journal-number-inputs input[type="number"], .manual-grocery input[type="number"] { appearance: textfield; -moz-appearance: textfield; -webkit-appearance: textfield; padding-right: 7px; line-height: 1.2; }
 .habit-input-inline input[type="number"]::-webkit-inner-spin-button, .habit-input-inline input[type="number"]::-webkit-outer-spin-button, .habit-inputs input[type="number"]::-webkit-inner-spin-button, .habit-inputs input[type="number"]::-webkit-outer-spin-button, .journal-number-inputs input[type="number"]::-webkit-inner-spin-button, .journal-number-inputs input[type="number"]::-webkit-outer-spin-button, .manual-grocery input[type="number"]::-webkit-inner-spin-button, .manual-grocery input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.restart-card { background: #fff8f7; border-color: #f2dedd; }
+.restart-card h3 { margin: 8px 0; }
+.restart-card p { max-width: 520px; font-size: 11px; line-height: 1.6; }
+.danger-button { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #efcaca; border-radius: 9px; padding: 9px 12px; color: #9c5959; background: #fff; font-size: 10px; font-weight: 700; cursor: pointer; }
+.danger-button:hover { color: #843f3f; border-color: #dfa9a9; background: #fff3f3; }

@@ -82,7 +82,7 @@ Build the Pages artifact locally with:
 npm run build:pages
 ```
 
-This command temporarily excludes the local SQLite API route while Next.js creates the export, then restores the route before exiting. It enables a build-time synthetic demo state with generic recipes and sample entries; visitors can edit or replace that browser-local state. The local source remains available for `npm run dev` and `npm run build`. The exported application is configured for the repository subpath `/75-soft-challenge/`, supports trailing-slash direct loading, and uses browser persistence.
+This command temporarily excludes the local SQLite API route while Next.js creates the export, then restores the route before exiting. The exported application starts with a clean onboarding screen and stores each visitor's setup and progress in browser storage. The local source remains available for `npm run dev` and `npm run build`. The exported application is configured for the repository subpath `/75-soft-challenge/`, supports trailing-slash direct loading, and uses browser persistence.
 
 The intended URL after a successful, approved deployment is:
 
@@ -108,7 +108,7 @@ The browser build keeps state in the current browser profile. Clearing site data
 
 ## Development / testing data
 
-The starter recipes and displayed text are generic synthetic content included to make the application reviewable without personal data. The Pages build additionally starts with an optional synthetic demo state; this is not a separate backend or a shared user dataset. They are not a production meal database and are not presented as medical or nutritional advice.
+The starter recipes and displayed text are generic synthetic content included to make the application reviewable without personal data. A new visitor still completes onboarding before the challenge becomes active; the starter recipes are available as an empty library, not as logged activity. They are not a production meal database and are not presented as medical or nutritional advice.
 
 ## Data and privacy
 

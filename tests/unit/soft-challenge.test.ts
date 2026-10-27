@@ -4,20 +4,37 @@ import {
   aggregateGroceries,
   challengeEndDate,
   completionForDay,
-  createDemoState,
   createInitialState,
+  createRestartState,
   dayNumber,
   progressPictureDays,
   type DayLog
 } from "@/lib/soft-challenge";
 
 describe("75 Soft calculations", () => {
-  it("creates a generic active demo state without personal data", () => {
-    const state = createDemoState();
+  it("starts clean and keeps the challenge inactive until onboarding", () => {
+    const state = createInitialState();
 
-    expect(state.settings.active).toBe(true);
-    expect(state.logs[Object.keys(state.logs)[0]]?.notes).toBe("Synthetic demo entry");
-    expect(state.assignments).toHaveLength(2);
+    expect(state.settings.active).toBe(false);
+    expect(state.logs).toEqual({});
+    expect(state.assignments).toEqual([]);
+  });
+
+  it("restarts the challenge without removing the recipe library", () => {
+    const state = createInitialState();
+    state.settings.active = true;
+    state.logs["2026-11-01"] = { water: 3 };
+    state.batches = [{ id: "batch-1", recipeId: "r25", weekStart: "2026-11-02", servings: 4 }];
+    state.photos = [{ id: "photo-1", date: "2026-11-01" }];
+    state.recipes = [{ ...state.recipes[0], name: "Saját recept" }];
+
+    const restarted = createRestartState(state);
+
+    expect(restarted.settings.active).toBe(false);
+    expect(restarted.logs).toEqual({});
+    expect(restarted.batches).toEqual([]);
+    expect(restarted.photos).toEqual([]);
+    expect(restarted.recipes).toEqual(state.recipes);
   });
 
   it("counts the start date as day one and ends on day 75", () => {
