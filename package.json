@@ -1,0 +1,37 @@
+{
+  "name": "75-soft-challenge",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "lucide-react": "0.542.0",
+    "next": "15.5.28",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "3.3.5",
+    "@tailwindcss/postcss": "4.1.13",
+    "@testing-library/jest-dom": "6.8.0",
+    "@types/node": "24.3.1",
+    "@types/react": "19.1.12",
+    "@types/react-dom": "19.1.9",
+    "eslint": "9.35.0",
+    "eslint-config-next": "15.5.28",
+    "jsdom": "26.1.0",
+    "postcss": "8.5.32",
+    "tailwindcss": "4.1.13",
+    "typescript": "5.8.3",
+    "vitest": "3.2.7"
+  },
+  "overrides": {
+    "postcss": "8.5.32"
+  }
+}

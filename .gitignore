@@ -1,0 +1,17 @@
+.DS_Store
+.next/
+node_modules/
+coverage/
+playwright-report/
+test-results/
+dist/
+out/
+.env
+*.log
+data/*.sqlite
+data/*.sqlite-*
+data/
+75-soft-mentes.json
+*.export.json
+*.db
+*.tsbuildinfo
