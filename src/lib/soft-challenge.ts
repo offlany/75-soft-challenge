@@ -186,6 +186,29 @@ export const createInitialState = (): SoftState => ({
   manualGroceries: []
 });
 
+export function createDemoState(): SoftState {
+  const state = createInitialState();
+  const today = localDateString();
+  const startDate = addDays(today, -5);
+  const batchId = "demo-batch";
+
+  state.settings = { ...state.settings, active: true, startDate };
+  state.logs[today] = {
+    water: 2.5,
+    readingPages: 12,
+    exerciseMinutes: 30,
+    mindful: true,
+    alcohol: "none",
+    notes: "Synthetic demo entry"
+  };
+  state.batches = [{ id: batchId, recipeId: "r25", weekStart: weekStart(today), servings: 4 }];
+  state.assignments = [
+    { id: "demo-meal-1", date: today, slot: "ebed", batchId, servings: 1 },
+    { id: "demo-meal-2", date: today, slot: "vacsora", batchId, servings: 1 }
+  ];
+  return state;
+}
+
 export function localDateString(date = new Date()): string {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");

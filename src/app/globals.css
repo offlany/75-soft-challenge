@@ -56,6 +56,7 @@ a { color: inherit; text-decoration: none; }
 .help-button { color: #88838d; background: transparent; border: 0; display: flex; align-items: center; gap: 7px; font-size: 12px; }
 .mobile-menu { display: none; }
 .content-wrap { max-width: 1440px; padding: 42px 48px 72px; margin: 0 auto; }
+.storage-warning { margin-bottom: 18px; padding: 12px 15px; border: 1px solid #f0c9c9; border-radius: 12px; color: #9a5050; background: #fff4f4; font-size: 11px; line-height: 1.5; }
 .page-enter { animation: page-in .4s ease both; } @keyframes page-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 .page-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; margin-bottom: 30px; }
 .page-heading h1 { font-size: 32px; line-height: 1.1; letter-spacing: -.055em; margin: 7px 0 8px; font-weight: 650; } .page-heading p { margin: 0; }
