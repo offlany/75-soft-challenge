@@ -51,6 +51,7 @@ import {
   statusForDay,
   weekStart,
   type ChallengeSettings,
+  type CookingBatch,
   type DayLog,
   type HabitId,
   type MealSlot,
@@ -301,7 +302,131 @@ function RecipeCard({ recipe, onSelect, onFavorite, onDelete }: { recipe: Recipe
 
 function RecipeModal({ recipe, onClose }: { recipe: Recipe; onClose: () => void }) { return <div className="modal-backdrop" onClick={onClose}><div className="recipe-modal" onClick={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={onClose}><X size={18} /></button><div className="recipe-modal-hero"><span>{recipe.category}</span><h2>{recipe.name}</h2><p>{recipe.description}</p><div className="recipe-modal-meta"><span><Clock3 size={15} /> {recipe.activeMinutes} perc aktív</span><span><Clock3 size={15} /> {recipe.totalMinutes} perc összesen</span><span><Utensils size={15} /> {recipe.servings} adag</span></div></div><div className="recipe-modal-body"><div><div className="eyebrow">HOZZÁVALÓK</div><ul className="ingredient-list">{recipe.ingredients.map((item) => <li key={item.id}><span>{item.name}</span><strong>{item.quantity} {item.unit}</strong></li>)}</ul></div><div><div className="eyebrow">ELKÉSZÍTÉS</div><ol className="instruction-list">{recipe.instructions.map((instruction) => <li key={instruction}>{instruction}</li>)}</ol></div></div></div></div>; }
 
-function PlannerView({ state, week, onWeekChange, onUpdate }: { state: SoftState; week: string; onWeekChange: (value: string) => void; onUpdate: (updater: (current: SoftState) => SoftState) => void }) { const [activeBatch, setActiveBatch] = useState(""); const weekDates = Array.from({ length: 7 }, (_, index) => addDays(week, index)); const batches = state.batches.filter((batch) => batch.weekStart === week); const addBatch = (recipeId: string) => { const currentRecipe = state.recipes.find((recipe) => recipe.id === recipeId); if (!currentRecipe) return; const batch = { id: makeId("batch"), recipeId, weekStart: week, servings: currentRecipe.mealPrep ? currentRecipe.servings : Math.max(2, currentRecipe.servings) }; onUpdate((current) => ({ ...current, batches: [...current.batches, batch] })); setActiveBatch(batch.id); }; const assign = (date: string, slot: MealSlot) => { if (!activeBatch) return; const existing = state.assignments.find((item) => item.date === date && item.slot === slot); const batch = state.batches.find((item) => item.id === activeBatch); const assigned = state.assignments.filter((item) => item.batchId === activeBatch).reduce((sum, item) => sum + item.servings, 0); if (assigned >= (batch?.servings ?? 0)) { window.alert("Ez a főzési adag már elfogyott. Növeld a batch mennyiségét a tervben."); return; } onUpdate((current) => ({ ...current, assignments: [...current.assignments.filter((item) => !(item.date === date && item.slot === slot)), { id: makeId("meal"), date, slot, batchId: activeBatch, servings: 1 }] })); if (existing) setActiveBatch(activeBatch); }; const removeAssignment = (assignmentId: string) => onUpdate((current) => ({ ...current, assignments: current.assignments.filter((item) => item.id !== assignmentId) })); return <div className="page-enter"><PageHeader eyebrow="HETI MENÜ" title="Tervezd meg, ami táplál" description="Főzz előre, használj fel mindent, és hagyj helyet a spontaneitásnak." action={<div className="week-switcher"><button type="button" onClick={() => onWeekChange(addDays(week, -7))}><ArrowLeft size={16} /></button><strong>{formatDate(week, { month: "short", day: "numeric" })} – {formatDate(addDays(week, 6), { month: "short", day: "numeric" })}</strong><button type="button" onClick={() => onWeekChange(addDays(week, 7))}><ArrowRight size={16} /></button></div>} /><div className="planner-layout"><section className="card meal-board"><div className="card-heading"><div><div className="eyebrow">HETI ÉTKEZÉSI TERV</div><h3>Válassz egy batch-et, majd kattints egy slotra</h3></div><span className="muted small">{state.assignments.filter((item) => item.date >= week && item.date <= addDays(week, 6)).length} étkezés tervezve</span></div><div className="meal-board-grid"><div className="meal-board-labels"><span /><strong>Reggeli</strong><strong>Ebéd</strong><strong>Vacsora</strong></div>{weekDates.map((date) => <div className="planner-day" key={date}><div className="planner-day-head"><strong>{formatDate(date, { weekday: "short" })}</strong><span>{parseLocalDate(date).getDate()}</span></div>{(["reggeli", "ebed", "vacsora"] as MealSlot[]).map((slot) => { const assignment = state.assignments.find((item) => item.date === date && item.slot === slot); const batch = assignment ? state.batches.find((item) => item.id === assignment.batchId) : undefined; const recipe = batch ? state.recipes.find((item) => item.id === batch.recipeId) : undefined; return <button type="button" key={slot} className={`planner-slot ${assignment ? "filled" : ""} ${activeBatch ? "ready" : ""}`} onClick={() => assignment ? removeAssignment(assignment.id) : assign(date, slot)}>{recipe ? <><span className="slot-dot" /><span>{recipe.name}</span><X size={13} /></> : <Plus size={16} />}</button>; })}</div>)}</div></section><aside className="planner-side"><div className="card batch-card"><div className="card-heading"><div><div className="eyebrow">HETI FŐZÉSI TERV</div><h3>Előkészítendő</h3></div><button className="icon-button" type="button" onClick={() => addBatch(state.recipes.find((item) => item.mealPrep)?.id ?? state.recipes[0].id)}><Plus size={16} /></button></div>{batches.length ? batches.map((batch) => { const recipe = state.recipes.find((item) => item.id === batch.recipeId); const used = state.assignments.filter((item) => item.batchId === batch.id).reduce((sum, item) => sum + item.servings, 0); return <button type="button" key={batch.id} className={`batch-row ${activeBatch === batch.id ? "active" : ""}`} onClick={() => setActiveBatch(batch.id)}><span className="batch-thumb"><Utensils size={15} /></span><span><strong>{recipe?.name}</strong><small>{used} / {batch.servings} adag felhasználva</small><ProgressBar value={(used / batch.servings) * 100} /></span><MoreHorizontal size={15} /></button>; }) : <div className="empty-state"><Utensils size={24} /><strong>Még nincs főzési terved</strong><p>Válassz receptet a listából, és építsd fel a heted.</p></div>}<div className="recipe-picker"><div className="eyebrow">RECEPT HOZZÁADÁSA</div><div className="picker-scroll">{state.recipes.filter((item) => item.mealPrep).slice(0, 6).map((recipe) => <button type="button" key={recipe.id} onClick={() => addBatch(recipe.id)}><Plus size={14} /> {recipe.name}</button>)}</div></div></div></aside></div></div>; }
+function PlannerView({ state, week, onWeekChange, onUpdate }: { state: SoftState; week: string; onWeekChange: (value: string) => void; onUpdate: (updater: (current: SoftState) => SoftState) => void }) {
+  const [activeBatch, setActiveBatch] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [recipeQuery, setRecipeQuery] = useState("");
+  const [recipeCategory, setRecipeCategory] = useState("Mindegy");
+  const [selectedRecipeId, setSelectedRecipeId] = useState("");
+  const [servingsDraft, setServingsDraft] = useState("1");
+  const [mealPrepDraft, setMealPrepDraft] = useState(true);
+  const [editingBatchId, setEditingBatchId] = useState("");
+  const [editingServings, setEditingServings] = useState("1");
+  const [editingMealPrep, setEditingMealPrep] = useState(true);
+  const [plannerNotice, setPlannerNotice] = useState("");
+  const weekDates = Array.from({ length: 7 }, (_, index) => addDays(week, index));
+  const batches = state.batches.filter((batch) => batch.weekStart === week);
+  const recipeCategories = ["Mindegy", ...Array.from(new Set(state.recipes.map((recipe) => recipe.category)))];
+  const filteredRecipes = state.recipes.filter((recipe) => {
+    const matchesCategory = recipeCategory === "Mindegy" || recipe.category === recipeCategory;
+    const matchesQuery = recipe.name.toLocaleLowerCase("hu-HU").includes(recipeQuery.toLocaleLowerCase("hu-HU"));
+    return matchesCategory && matchesQuery;
+  });
+  const selectedRecipe = state.recipes.find((recipe) => recipe.id === selectedRecipeId);
+  const selectedBatch = batches.find((batch) => batch.id === activeBatch);
+  const selectedBatchRecipe = selectedBatch ? state.recipes.find((recipe) => recipe.id === selectedBatch.recipeId) : undefined;
+  const selectedBatchUsed = selectedBatch ? state.assignments.filter((item) => item.batchId === selectedBatch.id).reduce((sum, item) => sum + item.servings, 0) : 0;
+  const slotLabels: Record<MealSlot, string> = { reggeli: "Reggeli", ebed: "Ebéd", vacsora: "Vacsora" };
+
+  const openPicker = () => {
+    setPickerOpen(true);
+    setSelectedRecipeId("");
+    setRecipeQuery("");
+    setRecipeCategory("Mindegy");
+    setPlannerNotice("");
+  };
+
+  const selectRecipe = (recipe: Recipe) => {
+    setSelectedRecipeId(recipe.id);
+    setServingsDraft(String(Math.max(1, recipe.servings)));
+    setMealPrepDraft(Boolean(recipe.mealPrep));
+    setPlannerNotice("");
+  };
+
+  const addBatch = () => {
+    if (!selectedRecipe) return;
+    const servings = Math.max(1, Math.floor(Number(servingsDraft) || 0));
+    const existing = batches.find((batch) => batch.recipeId === selectedRecipe.id);
+    if (existing) {
+      setActiveBatch(existing.id);
+      setPickerOpen(false);
+      setPlannerNotice("Ez a recept már szerepel ezen a héten; kijelöltem a meglévő batch-et.");
+      return;
+    }
+    const batch = { id: makeId("batch"), recipeId: selectedRecipe.id, weekStart: week, servings, mealPrep: mealPrepDraft };
+    onUpdate((current) => ({ ...current, batches: [...current.batches, batch] }));
+    setActiveBatch(batch.id);
+    setPickerOpen(false);
+    setSelectedRecipeId("");
+    setPlannerNotice(`${selectedRecipe.name} bekerült a heti főzési tervbe.`);
+  };
+
+  const assign = (date: string, slot: MealSlot) => {
+    if (!activeBatch) {
+      setPlannerNotice("Előbb válassz ki egy batch-et a heti főzési tervből.");
+      return;
+    }
+    const batch = state.batches.find((item) => item.id === activeBatch);
+    if (!batch) return;
+    const existing = state.assignments.find((item) => item.date === date && item.slot === slot);
+    if (existing?.batchId === activeBatch) {
+      onUpdate((current) => ({ ...current, assignments: current.assignments.filter((item) => item.id !== existing.id) }));
+      return;
+    }
+    const assigned = state.assignments.filter((item) => item.batchId === activeBatch).reduce((sum, item) => sum + item.servings, 0);
+    if (assigned + 1 > batch.servings) {
+      window.alert("Ez a főzési adag már elfogyott. Növeld a batch mennyiségét a tervben.");
+      return;
+    }
+    onUpdate((current) => ({
+      ...current,
+      assignments: [...current.assignments.filter((item) => !(item.date === date && item.slot === slot)), { id: makeId("meal"), date, slot, batchId: activeBatch, servings: 1 }]
+    }));
+  };
+
+  const removeAssignment = (assignmentId: string) => onUpdate((current) => ({ ...current, assignments: current.assignments.filter((item) => item.id !== assignmentId) }));
+
+  const startBatchEdit = (batch: CookingBatch) => {
+    setEditingBatchId(batch.id);
+    setEditingServings(String(batch.servings));
+    setEditingMealPrep(Boolean(batch.mealPrep));
+  };
+
+  const saveBatchEdit = () => {
+    const batch = batches.find((item) => item.id === editingBatchId);
+    if (!batch) return;
+    const used = state.assignments.filter((item) => item.batchId === batch.id).reduce((sum, item) => sum + item.servings, 0);
+    const servings = Math.max(used, Math.floor(Number(editingServings) || 0), 1);
+    onUpdate((current) => ({ ...current, batches: current.batches.map((item) => item.id === batch.id ? { ...item, servings, mealPrep: editingMealPrep } : item) }));
+    setEditingBatchId("");
+  };
+
+  const deleteBatch = (batch: CookingBatch) => {
+    const recipe = state.recipes.find((item) => item.id === batch.recipeId);
+    if (!window.confirm(`Törlöd a(z) „${recipe?.name ?? "ismeretlen recept"}” batch-et és a hozzá tartozó étkezéseket?`)) return;
+    onUpdate((current) => ({ ...current, batches: current.batches.filter((item) => item.id !== batch.id), assignments: current.assignments.filter((item) => item.batchId !== batch.id) }));
+    if (activeBatch === batch.id) setActiveBatch("");
+    if (editingBatchId === batch.id) setEditingBatchId("");
+  };
+
+  const changeWeek = (value: string) => {
+    setActiveBatch("");
+    setEditingBatchId("");
+    onWeekChange(value);
+  };
+
+  return <div className="page-enter">
+    <PageHeader eyebrow="HETI MENÜ" title="Tervezd meg, ami táplál" description="Főzz előre, használj fel mindent, és hagyj helyet a spontaneitásnak." action={<div className="week-switcher"><button type="button" onClick={() => changeWeek(addDays(week, -7))}><ArrowLeft size={16} /></button><strong>{formatDate(week, { month: "short", day: "numeric" })} – {formatDate(addDays(week, 6), { month: "short", day: "numeric" })}</strong><button type="button" onClick={() => changeWeek(addDays(week, 7))}><ArrowRight size={16} /></button></div>} />
+    {plannerNotice ? <div className="planner-notice" role="status">{plannerNotice}</div> : null}
+    {selectedBatch && selectedBatchRecipe ? <div className="selected-batch-banner" data-testid="active-batch-banner"><div><span className="eyebrow">KIVÁLASZTOTT BATCH</span><strong>{selectedBatchRecipe.name}</strong><small>{selectedBatchUsed} / {selectedBatch.servings} adag felhasználva · még {Math.max(0, selectedBatch.servings - selectedBatchUsed)} adag</small></div><button type="button" className="secondary-button" onClick={() => setActiveBatch("")}>Kijelölés törlése</button></div> : <div className="planner-hint">Válassz egy batch-et, majd kattints a naptárban a reggeli, ebéd vagy vacsora mezőjére.</div>}
+    <div className="planner-layout">
+      <section className="card meal-board"><div className="card-heading"><div><div className="eyebrow">HETI ÉTKEZÉSI TERV</div><h3>Reggeli · ebéd · vacsora</h3></div><span className="muted small">{state.assignments.filter((item) => item.date >= week && item.date <= addDays(week, 6)).length} étkezés tervezve</span></div><div className="meal-board-grid"><div className="meal-board-labels"><span /><strong>Reggeli</strong><strong>Ebéd</strong><strong>Vacsora</strong></div>{weekDates.map((date) => <div className="planner-day" key={date}><div className="planner-day-head"><strong>{formatDate(date, { weekday: "short" })}</strong><span>{parseLocalDate(date).getDate()}</span></div>{(["reggeli", "ebed", "vacsora"] as MealSlot[]).map((slot) => { const assignment = state.assignments.find((item) => item.date === date && item.slot === slot); const batch = assignment ? state.batches.find((item) => item.id === assignment.batchId) : undefined; const recipe = batch ? state.recipes.find((item) => item.id === batch.recipeId) : undefined; return <button type="button" key={slot} data-testid={`planner-slot-${date}-${slot}`} aria-label={`${formatDate(date, { weekday: "long", month: "long", day: "numeric" })} ${slotLabels[slot]}`} className={`planner-slot ${assignment ? "filled" : ""} ${activeBatch ? "ready" : ""}`} title={assignment ? `${recipe?.name ?? "Étkezés"} · kattints a cseréhez vagy eltávolításhoz` : `${slotLabels[slot]} hozzáadása`} onClick={() => assignment && activeBatch && assignment.batchId !== activeBatch ? assign(date, slot) : assignment ? removeAssignment(assignment.id) : assign(date, slot)}>{recipe ? <><span className="slot-dot" /><span>{recipe.name}</span><X size={13} /></> : <Plus size={16} />}</button>; })}</div>)}</div></section>
+      <aside className="planner-side"><div className="card batch-card"><div className="card-heading"><div><div className="eyebrow">HETI FŐZÉSI TERV</div><h3>Előkészítendő</h3></div><button className="icon-button" type="button" data-testid="open-recipe-picker" aria-label="Recept hozzáadása" onClick={openPicker}><Plus size={16} /></button></div>{batches.length ? batches.map((batch) => { const recipe = state.recipes.find((item) => item.id === batch.recipeId); const used = state.assignments.filter((item) => item.batchId === batch.id).reduce((sum, item) => sum + item.servings, 0); return <div key={batch.id}><div className={`batch-row ${activeBatch === batch.id ? "active" : ""}`}><button type="button" className="batch-select" data-testid={`batch-select-${batch.id}`} onClick={() => setActiveBatch(batch.id)}><span className="batch-thumb"><Utensils size={15} /></span><span><strong>{recipe?.name}</strong><small>{used} / {batch.servings} adag felhasználva{batch.mealPrep ? " · meal prep" : " · egy étkezés"}</small><ProgressBar value={(used / Math.max(1, batch.servings)) * 100} /></span></button><button type="button" className="batch-action" aria-label={`${recipe?.name ?? "Batch"} szerkesztése`} onClick={() => startBatchEdit(batch)}><Edit3 size={15} /></button><button type="button" className="batch-action danger" aria-label={`${recipe?.name ?? "Batch"} törlése`} onClick={() => deleteBatch(batch)}><Trash2 size={15} /></button></div>{editingBatchId === batch.id ? <div className="batch-edit-form"><Field label="Adagok"><input data-testid="batch-edit-servings" type="number" min={Math.max(1, used)} step="1" value={editingServings} onChange={(event) => setEditingServings(event.target.value)} /></Field><label className="toggle-row"><input type="checkbox" checked={editingMealPrep} onChange={(event) => setEditingMealPrep(event.target.checked)} /><span className="toggle" /><span><strong>Meal prep</strong><small>Több étkezéshez készül.</small></span></label><div className="batch-edit-actions"><button type="button" className="secondary-button" onClick={() => setEditingBatchId("")}>Mégsem</button><button type="button" className="primary-button" onClick={saveBatchEdit}>Mentés</button></div></div> : null}</div>; }) : <div className="empty-state"><Utensils size={24} /><strong>Még nincs főzési terved</strong><p>A jobb felső plusz gombbal válassz receptet és állítsd be az adagokat.</p></div>}
+        {pickerOpen ? <div className="recipe-picker-panel"><div className="recipe-picker-head"><div><div className="eyebrow">RECEPT HOZZÁADÁSA</div><h3>Válassz a receptjeid közül</h3></div><button type="button" className="icon-button" aria-label="Receptválasztó bezárása" onClick={() => setPickerOpen(false)}><X size={16} /></button></div><div className="search-field recipe-picker-search"><Search size={16} /><input data-testid="recipe-picker-search" value={recipeQuery} onChange={(event) => setRecipeQuery(event.target.value)} placeholder="Keress receptnév alapján…" /></div><div className="filter-pills recipe-picker-filters">{recipeCategories.map((category) => <button type="button" key={category} className={recipeCategory === category ? "active" : ""} onClick={() => setRecipeCategory(category)}>{category}</button>)}</div><div className="picker-scroll recipe-picker-results">{filteredRecipes.length ? filteredRecipes.map((recipe) => <button type="button" key={recipe.id} data-testid={`recipe-picker-option-${recipe.id}`} className={`recipe-picker-option ${selectedRecipeId === recipe.id ? "selected" : ""}`} onClick={() => selectRecipe(recipe)}><span className="batch-thumb"><Utensils size={15} /></span><span><strong>{recipe.name}</strong><small>{recipe.category} · {recipe.servings} alap adag</small></span>{selectedRecipeId === recipe.id ? <Check size={16} /> : <Plus size={15} />}</button>) : <div className="empty-state"><Search size={22} /><strong>Nincs találat</strong><p>Próbálj másik nevet vagy kategóriát.</p></div>}</div>{selectedRecipe ? <div className="batch-create-form"><div><strong>{selectedRecipe.name}</strong><small>{selectedRecipe.category}</small></div><Field label="Elkészítendő adagok"><input data-testid="batch-servings-input" type="number" min="1" step="1" value={servingsDraft} onChange={(event) => setServingsDraft(event.target.value)} /></Field><label className="toggle-row"><input type="checkbox" checked={mealPrepDraft} onChange={(event) => setMealPrepDraft(event.target.checked)} /><span className="toggle" /><span><strong>Meal prep</strong><small>Több étkezéshez is felhasználható.</small></span></label><button type="button" data-testid="batch-add-button" className="primary-button wide" onClick={addBatch}>Batch hozzáadása <Plus size={16} /></button></div> : <p className="picker-help">Kattints egy receptre a részletekhez és az adagok beállításához.</p>}</div> : <div className="recipe-picker-closed"><p className="muted small">A plusz gomb megnyitja az összes receptet, saját receptekkel együtt.</p></div>}
+      </div></aside>
+    </div>
+  </div>;
+}
 
 function GroceriesView({ state, onUpdate }: { state: SoftState; onUpdate: (updater: (current: SoftState) => SoftState) => void }) { const groceries = aggregateGroceries(state); const grouped = groceries.reduce<Record<string, typeof groceries>>((accumulator, item) => { (accumulator[item.category] ||= []).push(item); return accumulator; }, {}); const [newItem, setNewItem] = useState(""); const [newQty, setNewQty] = useState("1"); const addItem = (event: FormEvent) => { event.preventDefault(); if (!newItem.trim()) return; onUpdate((current) => ({ ...current, manualGroceries: [...current.manualGroceries, { id: makeId("grocery"), name: newItem.trim(), quantity: Number(newQty) || 1, unit: "db", category: "Egyéb" }] })); setNewItem(""); }; const toggle = (key: string, type: "purchased" | "pantry") => onUpdate((current) => ({ ...current, groceryStatus: { ...current.groceryStatus, [key]: { ...current.groceryStatus[key], [type]: !current.groceryStatus[key]?.[type] } } })); const remaining = groceries.filter((item) => !state.groceryStatus[item.key]?.purchased && !state.groceryStatus[item.key]?.pantry).length; return <div className="page-enter"><PageHeader eyebrow="BEVÁSÁRLÓLISTA" title="Kevesebb fejben tartani" description="A főzési terveidből automatikusan számolt mennyiségek." action={<div className="list-actions"><button className="secondary-button" type="button" onClick={() => navigator.clipboard?.writeText(groceries.map((item) => `${item.name} – ${item.quantity} ${item.unit}`).join("\n"))}><ClipboardCheck size={16} /> Másolás</button><button className="primary-button" type="button" onClick={() => window.print()}><ShoppingBasket size={16} /> Nyomtatás</button></div>} /><div className="grocery-summary"><div><span>Összes tétel</span><strong>{groceries.length}</strong></div><div><span>Még szükséges</span><strong>{remaining}</strong></div><div><span>Beszerzési kategória</span><strong>{Object.keys(grouped).length}</strong></div><div className="grocery-summary-art"><ShoppingBasket size={28} /></div></div><div className="grocery-layout"><section className="card grocery-card"><div className="card-heading"><div><div className="eyebrow">TERVEZETT HOZZÁVALÓK</div><h3>Hozzávalók kategóriánként</h3></div><span className="completion-pill">{groceries.length - remaining} / {groceries.length} kész</span></div>{Object.keys(grouped).length ? Object.entries(grouped).map(([category, items]) => <div className="grocery-group" key={category}><h4>{category}</h4>{items.map((item) => { const status = state.groceryStatus[item.key] ?? {}; return <div className={`grocery-row ${status.purchased || status.pantry ? "done" : ""}`} key={item.key}><button type="button" className={`grocery-check ${status.purchased ? "checked" : ""}`} onClick={() => toggle(item.key, "purchased")}>{status.purchased ? <Check size={14} /> : null}</button><span><strong>{item.name}</strong><small>{status.pantry ? "Otthon van" : status.purchased ? "Beszerezve" : "Még szükséges"}</small></span><strong className="grocery-qty">{Math.round(item.quantity * 100) / 100} {item.unit}</strong><button type="button" className={`pantry-button ${status.pantry ? "active" : ""}`} onClick={() => toggle(item.key, "pantry")}>{status.pantry ? "otthon van" : "van otthon?"}</button></div>; })}</div>) : <div className="empty-state large"><ShoppingBasket size={30} /><strong>A listád még üres</strong><p>Adj hozzá egy főzési batch-et a Heti menüben.</p></div>}</section><aside className="card manual-grocery"><div className="eyebrow">SAJÁT TÉTEL</div><h3>Valami, ami nincs a receptben?</h3><form onSubmit={addItem}><input value={newItem} onChange={(event) => setNewItem(event.target.value)} placeholder="pl. mosogatógép tabletta" /><div><input type="number" min="1" value={newQty} onChange={(event) => setNewQty(event.target.value)} /><span>db</span><button type="submit"><Plus size={16} /></button></div></form><p className="muted small">A kézzel hozzáadott tételek is megmaradnak a következő alkalomra.</p></aside></div></div>; }
 

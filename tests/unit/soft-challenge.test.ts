@@ -74,4 +74,21 @@ describe("75 Soft calculations", () => {
     const groceries = aggregateGroceries(state);
     expect(groceries.find((item) => item.name === "rizs")?.quantity).toBe(300);
   });
+
+  it("scales batch ingredients and combines compatible gram units", () => {
+    const state = createInitialState();
+    const baseRecipe = state.recipes[0];
+    state.recipes = [
+      { ...baseRecipe, id: "grams", servings: 1, ingredients: [{ ...baseRecipe.ingredients[0], id: "grams-ingredient", name: "rizs", quantity: 500, unit: "g" }] },
+      { ...baseRecipe, id: "kilograms", servings: 2, ingredients: [{ ...baseRecipe.ingredients[0], id: "kilograms-ingredient", name: "Rizs", quantity: 1, unit: "kg" }] }
+    ];
+    state.batches = [
+      { id: "grams-batch", recipeId: "grams", weekStart: "2026-11-02", servings: 2 },
+      { id: "kilograms-batch", recipeId: "kilograms", weekStart: "2026-11-02", servings: 2 }
+    ];
+
+    const rice = aggregateGroceries(state).find((item) => item.name === "rizs");
+
+    expect(rice).toEqual(expect.objectContaining({ quantity: 2000, unit: "g" }));
+  });
 });

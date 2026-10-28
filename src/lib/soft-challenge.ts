@@ -60,6 +60,7 @@ export type CookingBatch = {
   recipeId: string;
   weekStart: string;
   servings: number;
+  mealPrep?: boolean;
 };
 
 export type MealAssignment = {
@@ -271,6 +272,16 @@ export function weekStart(value: string): string {
   return localDateString(date);
 }
 
+function normalizeGroceryUnit(unit: string): { key: string; label: string; factor: number } {
+  const normalized = unit.toLocaleLowerCase("hu-HU").trim();
+  if (["kg", "kilogramm", "kilogram"].includes(normalized)) return { key: "g", label: "g", factor: 1000 };
+  if (["g", "gramm"].includes(normalized)) return { key: "g", label: "g", factor: 1 };
+  if (["l", "liter", "litre"].includes(normalized)) return { key: "ml", label: "ml", factor: 1000 };
+  if (["ml", "milliliter", "millilitre"].includes(normalized)) return { key: "ml", label: "ml", factor: 1 };
+  if (["db", "darab"].includes(normalized)) return { key: "db", label: "db", factor: 1 };
+  return { key: normalized, label: unit, factor: 1 };
+}
+
 export function aggregateGroceries(state: SoftState): { key: string; name: string; quantity: number; unit: string; category: string }[] {
   const totals = new Map<string, { key: string; name: string; quantity: number; unit: string; category: string }>();
   state.batches.forEach((batch) => {
@@ -279,11 +290,11 @@ export function aggregateGroceries(state: SoftState): { key: string; name: strin
     currentRecipe.ingredients.forEach((item) => {
       const ratio = batch.servings / currentRecipe.servings;
       const normalizedName = item.name.toLocaleLowerCase("hu-HU").trim();
-      const normalizedUnit = item.unit.toLocaleLowerCase("hu-HU");
-      const key = `${normalizedName}|${normalizedUnit}`;
+      const normalizedUnit = normalizeGroceryUnit(item.unit);
+      const key = `${normalizedName}|${normalizedUnit.key}`;
       const existing = totals.get(key);
-      if (existing) existing.quantity += item.quantity * ratio;
-      else totals.set(key, { key, name: item.name, quantity: item.quantity * ratio, unit: item.unit, category: item.category });
+      if (existing) existing.quantity += item.quantity * ratio * normalizedUnit.factor;
+      else totals.set(key, { key, name: item.name, quantity: item.quantity * ratio * normalizedUnit.factor, unit: normalizedUnit.label, category: item.category });
     });
   });
   return [...totals.values(), ...state.manualGroceries.map((item) => ({ ...item, key: `manual-${item.id}` }))];
