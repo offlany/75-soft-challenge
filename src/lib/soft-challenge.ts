@@ -1,6 +1,12 @@
 export type HabitId = "movement" | "reading" | "water" | "mindful";
 export type MealSlot = "reggeli" | "ebed" | "vacsora";
 
+export type CustomHabit = {
+  id: string;
+  name: string;
+  category: string;
+};
+
 export type Ingredient = {
   id: string;
   name: string;
@@ -38,6 +44,7 @@ export type ChallengeSettings = {
   skipScope: "het" | "kihivas";
   restDay: string;
   habits: Record<HabitId, boolean>;
+  customHabits: CustomHabit[];
 };
 
 export type DayLog = {
@@ -52,7 +59,8 @@ export type DayLog = {
   alcohol?: "none" | "yes" | "unknown";
   alcoholOccasion?: string;
   notes?: string;
-  skips?: HabitId[];
+  skips?: string[];
+  customHabits?: Record<string, boolean>;
 };
 
 export type CookingBatch = {
@@ -176,7 +184,8 @@ export const createInitialState = (): SoftState => ({
     skipAllowance: 1,
     skipScope: "het",
     restDay: "vasárnap",
-    habits: { movement: true, reading: true, water: true, mindful: true }
+    habits: { movement: true, reading: true, water: true, mindful: true },
+    customHabits: []
   },
   logs: {},
   recipes: seedRecipes,
@@ -188,7 +197,12 @@ export const createInitialState = (): SoftState => ({
 });
 
 export function createRestartState(current: SoftState): SoftState {
-  return { ...createInitialState(), recipes: current.recipes };
+  const initial = createInitialState();
+  return {
+    ...initial,
+    recipes: current.recipes,
+    settings: { ...initial.settings, customHabits: current.settings.customHabits ?? [] }
+  };
 }
 
 export function localDateString(date = new Date()): string {
@@ -226,8 +240,9 @@ export function formatDate(value: string, options?: Intl.DateTimeFormatOptions):
 export function progressPictureDays(settings: ChallengeSettings): string[] {
   if (!settings.startDate) return [];
   const dates: string[] = [];
+  const interval = Math.max(1, Math.floor(settings.pictureInterval || 1));
   for (let day = 1; day <= 75; day += 1) {
-    if ((settings.includeDayOnePicture && day === 1) || day % settings.pictureInterval === 0) dates.push(addDays(settings.startDate, day - 1));
+    if ((settings.includeDayOnePicture && day === 1) || day % interval === 0) dates.push(addDays(settings.startDate, day - 1));
   }
   return dates;
 }
@@ -245,10 +260,17 @@ export function isDayHabitComplete(habit: HabitId, log: DayLog | undefined, sett
   return Boolean(log?.mindful);
 }
 
+export function isCustomHabitComplete(habitId: string, log: DayLog | undefined): boolean {
+  return Boolean(log?.customHabits?.[habitId]);
+}
+
 export function completionForDay(log: DayLog | undefined, settings: ChallengeSettings): number {
   const habits = (Object.keys(settings.habits) as HabitId[]).filter((habit) => settings.habits[habit]);
-  if (!habits.length) return 0;
-  return Math.round((habits.filter((habit) => isDayHabitComplete(habit, log, settings) || log?.skips?.includes(habit)).length / habits.length) * 100);
+  const customHabits = settings.customHabits ?? [];
+  const total = habits.length + customHabits.length;
+  if (!total) return 0;
+  const completed = habits.filter((habit) => isDayHabitComplete(habit, log, settings) || log?.skips?.includes(habit)).length;
+  return Math.round(((completed + customHabits.filter((habit) => isCustomHabitComplete(habit.id, log)).length) / total) * 100);
 }
 
 export function statusForDay(date: string, settings: ChallengeSettings, logs: Record<string, DayLog>): "future" | "current" | "complete" | "partial" | "incomplete" | "skip" {

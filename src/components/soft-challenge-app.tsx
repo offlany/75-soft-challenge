@@ -60,6 +60,10 @@ import {
 } from "@/lib/soft-challenge";
 import { loadBrowserState, saveBrowserState } from "@/lib/browser-persistence";
 import { parseSoftState, serializeSoftState } from "@/lib/soft-state-io";
+import OnboardingForm from "./onboarding-form";
+import SettingsViewUx from "./settings-view-ux";
+import { CustomHabitsCard } from "./custom-habits-card";
+import { ProgressPictureCard } from "./progress-picture-card";
 
 type View = "overview" | "calendar" | "journal" | "recipes" | "planner" | "groceries" | "progress" | "settings";
 
@@ -122,18 +126,18 @@ function SoftChallengeApp() {
       try {
         if (isStaticMode) {
           const result = await loadBrowserState();
-          if (!cancelled && result.state) setState({ ...createInitialState(), ...result.state });
+          if (!cancelled && result.state) setState(parseSoftState(result.state) ?? createInitialState());
           return;
         }
 
         const response = await fetch("/api/state");
         if (!response.ok) throw new Error("The local state API is unavailable.");
         const incoming = await response.json() as SoftState;
-        if (!cancelled && incoming?.settings) setState({ ...createInitialState(), ...incoming });
+        if (!cancelled) setState(parseSoftState(incoming) ?? createInitialState());
       } catch {
         try {
           const result = await loadBrowserState();
-          if (!cancelled && result.state) setState({ ...createInitialState(), ...result.state });
+          if (!cancelled && result.state) setState(parseSoftState(result.state) ?? createInitialState());
           if (!cancelled && !isStaticMode) setStorageError("A helyi SQLite mentés nem érhető el; böngészős biztonsági mentésből töltöttem be az adatokat.");
         } catch {
           if (!cancelled) setStorageError(isStaticMode ? "A böngészős mentés nem érhető el. Ellenőrizd a böngésző tárhelybeállításait." : "A helyi és a böngészős mentés sem érhető el.");
@@ -218,7 +222,7 @@ function SoftChallengeApp() {
   };
 
   if (!loaded) return <div className="app-loading"><div className="brand-mark"><Sparkles size={22} /></div><p>Betöltés…</p></div>;
-  if (!settings.active) return <Onboarding settings={settings} onStart={startChallenge} />;
+  if (!settings.active) return <OnboardingForm settings={settings} onStart={startChallenge} />;
 
   return (
     <div className="soft-app-shell">
@@ -249,14 +253,17 @@ function SoftChallengeApp() {
         <div className="content-wrap">
           {storageError ? <div className="storage-warning" role="alert">{storageError}</div> : null}
           {view === "overview" && <Overview state={state} today={activeDate} currentDay={currentDay} elapsed={elapsed} timePercent={timePercent} dailyCompletion={dailyCompletion} nextPicture={nextPicture} onUpdateLog={updateLog} onGoToDate={goToDate} onNavigate={setView} />}
+          {view === "overview" && <ProgressPictureCard settings={settings} today={today} nextPicture={nextPicture} photos={state.photos} />}
+          {view === "overview" && <CustomHabitsCard settings={settings} log={log} onUpdate={(patch) => updateLog(today, patch)} />}
           {view === "journal" && <Journal state={state} date={selectedDate} onDateChange={setSelectedDate} onUpdateLog={updateLog} onBack={() => setView("overview")} />}
+          {view === "journal" && <CustomHabitsCard settings={settings} log={state.logs[selectedDate]} onUpdate={(patch) => updateLog(selectedDate, patch)} />}
           {view === "calendar" && <CalendarView state={state} calendarDate={calendarDate} onCalendarDate={setCalendarDate} onGoToDate={goToDate} />}
           {view === "recipes" && <RecipesView state={state} onUpdate={updateState} />}
           {view === "planner" && <PlannerView state={state} week={plannerWeek} onWeekChange={setPlannerWeek} onUpdate={updateState} />}
           {view === "groceries" && <GroceriesView state={state} onUpdate={updateState} />}
           {view === "progress" && <ProgressView state={state} elapsed={elapsed} />}
           {view === "progress" && <ProgressPhotoFab onUpdate={updateState} />}
-          {view === "settings" && <SettingsView state={state} onUpdate={updateState} />}
+          {view === "settings" && <SettingsViewUx state={state} onUpdate={updateState} />}
           {view === "settings" && <RestartChallengeCard onRestart={restartChallenge} />}
         </div>
       </main>

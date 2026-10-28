@@ -54,6 +54,15 @@ describe("75 Soft calculations", () => {
     expect(completionForDay(incomplete, state.settings)).toBe(0);
   });
 
+  it("includes custom habits in daily completion", () => {
+    const state = createInitialState();
+    state.settings.habits = { movement: false, reading: false, water: false, mindful: false };
+    state.settings.customHabits = [{ id: "habit-1", name: "10 perc nyújtás", category: "Mozgás" }];
+
+    expect(completionForDay({}, state.settings)).toBe(0);
+    expect(completionForDay({ customHabits: { "habit-1": true } }, state.settings)).toBe(100);
+  });
+
   it("schedules day one and interval photos without duplicates", () => {
     const state = createInitialState();
     state.settings.startDate = "2026-11-01";
