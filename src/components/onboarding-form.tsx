@@ -69,7 +69,7 @@ export default function OnboardingForm({ settings, onStart }: { settings: Challe
     <div className="onboarding-panel">
       <div className="onboarding-panel-head">
         <div className="brand-lockup"><div className="brand-mark"><Sparkles size={21} /></div><div><strong>75 soft</strong><span>wellness planner</span></div></div>
-        <div className="onboarding-panel-actions"><LanguageSwitcher /><div className="onboarding-stepper" aria-label={t("Onboarding, 1. lépés a 2-ből")}><div className="stepper-track"><span className="active" /><span /></div><div><strong>{t("1. lépés / 2")}</strong><small>{t("Alapok és szokások")}</small></div></div></div>
+        <div className="onboarding-panel-actions"><LanguageSwitcher /></div>
       </div>
       <div className="onboarding-form">
         <div className="eyebrow">{t("KEZDJÜK A SAJÁT RITMUSODDAL")}</div>
