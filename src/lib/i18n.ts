@@ -141,6 +141,7 @@ export const translations = {
   "egy étkezés": "single meal",
   "Még nincs főzési terved": "No cooking plan yet",
   "A jobb felső plusz gombbal válassz receptet és állítsd be az adagokat.": "Use the plus button to choose a recipe and set the servings.",
+  "A plusz gomb megnyitja az összes receptet, saját receptekkel együtt.": "The plus button opens every recipe, including your own.",
   "RECEPT HOZZÁADÁSA": "ADD RECIPE",
   "Válassz a receptjeid közül": "Choose from your recipes",
   "Nincs találat": "No matches",
@@ -409,5 +410,14 @@ export function translateDay(value: string, locale = activeLocale): string {
 }
 
 export function translateCategory(value: string, locale = activeLocale): string {
-  return translate(value, locale);
+  const categories: Record<string, string> = {
+    Mindegy: "All",
+    Reggeli: "Breakfast",
+    "Csirkés és húsos": "Chicken and meat",
+    Halas: "Fish",
+    Húsmentes: "Vegetarian",
+    "Többadagos ételek": "Batch cooking",
+    "Saját receptek": "Custom recipes"
+  };
+  return locale === "en" ? categories[value] ?? translate(value, locale) : value;
 }
