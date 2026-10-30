@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, ArrowRight, BookOpen, Check, CheckCircle2, Droplets, Heart, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Activity, ArrowRight, BookOpen, Check, CheckCircle2, Droplets, Heart, Leaf, Plus, Trash2 } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { makeId, type ChallengeSettings, type CustomHabit, type HabitId } from "@/lib/soft-challenge";
 import { translateDay } from "@/lib/i18n";
@@ -55,26 +55,23 @@ export default function OnboardingForm({ settings, onStart }: { settings: Challe
 
   return <div className="onboarding">
     <div className="onboarding-art">
-      <div className="onboarding-orbit orbit-one" />
-      <div className="onboarding-orbit orbit-two" />
-      <div className="onboarding-spark"><Sparkles size={30} /></div>
+      <div className="onboarding-botanical" aria-hidden="true"><Leaf size={88} strokeWidth={1.1} /></div>
       <div className="onboarding-copy">
-        <div className="eyebrow light">{t("SZOKÁSOK, AMIK TÉGED TÁMOGATNAK")}</div>
-        <h1>{t("75 nap, ami")}<br /><em>{t("rólad szól.")}</em></h1>
-        <p>{t("Egy nyugodtabb, tudatosabb ritmus kialakítása apró, következetes lépésekkel.")}</p>
-        <div className="onboarding-quote">{t("„Nem a tökéletesség a cél. A jelenlét.”")}</div>
+        <div className="eyebrow light">{t("75 NAPOS KIHÍVÁS")}</div>
+        <h1>{t("A saját")}<br /><em>{t("ritmusodban.")}</em></h1>
+        <p>{t("Állítsd be a szokásaidat, és kövesd a haladásodat egy helyen.")}</p>
       </div>
-      <div className="onboarding-art-foot"><span><CheckCircle2 size={17} /> {t("Saját tempó")}</span><span><CheckCircle2 size={17} /> {t("Rugalmas szabályok")}</span><span><CheckCircle2 size={17} /> {t("Privát, helyi adatok")}</span></div>
+      <div className="onboarding-art-foot"><span><CheckCircle2 size={17} /> {t("Saját beállítások")}</span><span><CheckCircle2 size={17} /> {t("Helyi mentés")}</span></div>
     </div>
     <div className="onboarding-panel">
       <div className="onboarding-panel-head">
-        <div className="brand-lockup"><div className="brand-mark"><Sparkles size={21} /></div><div><strong>75 soft</strong><span>wellness planner</span></div></div>
+        <div className="brand-lockup"><div className="brand-mark"><Leaf size={21} /></div><div><strong>75 soft</strong><span>{t("NAPI TERVEZŐ")}</span></div></div>
         <div className="onboarding-panel-actions"><LanguageSwitcher /></div>
       </div>
       <div className="onboarding-form">
-        <div className="eyebrow">{t("KEZDJÜK A SAJÁT RITMUSODDAL")}</div>
-        <h2>{t("Állítsd be a kihívásod")}</h2>
-        <p className="muted onboarding-intro">{t("Válaszd ki, mi segítsen a mindennapokban. Később bármikor finomhangolhatod.")}</p>
+        <div className="eyebrow">{t("ELSŐ BEÁLLÍTÁS")}</div>
+        <h2>{t("Állítsd be a 75 napos kihívásodat")}</h2>
+        <p className="muted onboarding-intro">{t("A kihívás később is szerkeszthető a beállításokban.")}</p>
         <div className="form-grid"><Field label="Kezdő dátum"><input data-testid="onboarding-start-date" type="date" value={draft.startDate} onChange={(event) => update("startDate", event.target.value)} /></Field><Field label="Kezdés időpontja"><input type="time" value={draft.startTime} onChange={(event) => update("startTime", event.target.value)} /></Field></div>
         <section className="setup-block onboarding-section">
           <div className="setup-section-heading"><div><div className="setup-label">{t("NAPI SZOKÁSOK")}</div><p>{t("Kapcsold be az alapokat, amelyek tényleg támogatnak.")}</p></div><span className="section-count">{Object.values(draft.habits).filter(Boolean).length} {t("kiválasztva")}</span></div>
@@ -91,7 +88,7 @@ export default function OnboardingForm({ settings, onStart }: { settings: Challe
           <label className="toggle-row picture-toggle"><input type="checkbox" checked={draft.includeDayOnePicture} onChange={(event) => update("includeDayOnePicture", event.target.checked)} /><span className="toggle" /><span><strong>{t("Induló kép az 1. napon")}</strong><small>{draft.includeDayOnePicture ? t("Első progress kép: az indulás napján.") : t("Az első kép a beállított időköz szerint esedékes.")}</small></span></label>
           <label className="toggle-row"><input type="checkbox" checked={draft.skipsEnabled} onChange={(event) => update("skipsEnabled", event.target.checked)} /><span className="toggle" /><span><strong>{t("Engedélyezett kihagyások")}</strong><small>{draft.skipAllowance} {t("alkalom")} / {t(draft.skipScope === "het" ? "hét" : "kihívás")}</small></span></label>
         </div>
-        <div className="form-actions"><button data-testid="start-challenge" type="button" className="primary-button wide" onClick={() => onStart(draft)}>{t("Challenge indítása")} <ArrowRight size={18} /></button><p>{t("Az adataid csak ezen az eszközön maradnak.")}</p></div>
+        <div className="form-actions"><button data-testid="start-challenge" type="button" className="primary-button wide" onClick={() => onStart(draft)}>{t("Kihívás indítása")} <ArrowRight size={18} /></button><p>{t("Az adataid csak ezen az eszközön maradnak.")}</p></div>
       </div>
     </div>
   </div>;
