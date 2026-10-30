@@ -1,5 +1,16 @@
 export type HabitId = "movement" | "reading" | "water" | "mindful";
 export type MealSlot = "reggeli" | "ebed" | "vacsora";
+export type AppLocale = "hu" | "en";
+
+let activeLocale: AppLocale = "hu";
+
+export function setActiveLocale(locale: AppLocale): void {
+  activeLocale = locale;
+}
+
+export function getActiveLocale(): AppLocale {
+  return activeLocale;
+}
 
 export type CustomHabit = {
   id: string;
@@ -234,7 +245,11 @@ export function challengeEndDate(startDate: string): string {
 }
 
 export function formatDate(value: string, options?: Intl.DateTimeFormatOptions): string {
-  return new Intl.DateTimeFormat("hu-HU", options ?? { month: "short", day: "numeric" }).format(parseLocalDate(value));
+  return new Intl.DateTimeFormat(activeLocale === "hu" ? "hu-HU" : "en-GB", options ?? { month: "short", day: "numeric" }).format(parseLocalDate(value));
+}
+
+export function formatNumber(value: number, options?: Intl.NumberFormatOptions): string {
+  return new Intl.NumberFormat(activeLocale === "hu" ? "hu-HU" : "en-GB", options).format(value);
 }
 
 export function progressPictureDays(settings: ChallengeSettings): string[] {
