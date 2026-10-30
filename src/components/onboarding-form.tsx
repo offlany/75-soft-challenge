@@ -3,7 +3,6 @@
 import { Activity, ArrowRight, BookOpen, Check, CheckCircle2, Droplets, Heart, Leaf, Plus, Trash2 } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { makeId, type ChallengeSettings, type CustomHabit, type HabitId } from "@/lib/soft-challenge";
-import { translateDay } from "@/lib/i18n";
 import LanguageSwitcher from "./language-switcher";
 import { useLanguage } from "./language-provider";
 
@@ -15,7 +14,6 @@ const habitLabels: Record<HabitId, { title: string; detail: string; icon: typeof
 };
 
 const habitCategories = ["Mozgás", "Táplálkozás", "Mentális jóllét", "Saját fókusz"];
-const restDays = ["hétfő", "kedd", "szerda", "csütörtök", "péntek", "szombat", "vasárnap"];
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   const { t } = useLanguage();
@@ -55,7 +53,6 @@ export default function OnboardingForm({ settings, onStart }: { settings: Challe
 
   return <div className="onboarding">
     <div className="onboarding-art">
-      <div className="onboarding-botanical" aria-hidden="true"><Leaf size={88} strokeWidth={1.1} /></div>
       <div className="onboarding-copy">
         <div className="eyebrow light">{t("75 NAPOS KIHÍVÁS")}</div>
         <h1>{t("A saját")}<br /><em>{t("ritmusodban.")}</em></h1>
@@ -84,7 +81,6 @@ export default function OnboardingForm({ settings, onStart }: { settings: Challe
         </section>
         <div className="form-grid"><Field label="Víz cél (liter / nap)"><div className="input-with-suffix"><input type="number" min="0.5" step="0.25" value={draft.waterTarget} onChange={(event) => update("waterTarget", Number(event.target.value))} /><span>L</span></div></Field><Field label="Progress kép gyakorisága"><div className="input-with-suffix"><input type="number" min="1" step="1" value={draft.pictureInterval} onChange={(event) => update("pictureInterval", Math.max(1, Number(event.target.value)))} /><span>{t("naponta")}</span></div></Field></div>
         <div className="onboarding-options-grid">
-          <Field label="Heti pihenőnap"><select value={draft.restDay} onChange={(event) => update("restDay", event.target.value)}>{restDays.map((day) => <option key={day} value={day}>{translateDay(day)}</option>)}</select></Field>
           <label className="toggle-row picture-toggle"><input type="checkbox" checked={draft.includeDayOnePicture} onChange={(event) => update("includeDayOnePicture", event.target.checked)} /><span className="toggle" /><span><strong>{t("Induló kép az 1. napon")}</strong><small>{draft.includeDayOnePicture ? t("Első progress kép: az indulás napján.") : t("Az első kép a beállított időköz szerint esedékes.")}</small></span></label>
           <label className="toggle-row"><input type="checkbox" checked={draft.skipsEnabled} onChange={(event) => update("skipsEnabled", event.target.checked)} /><span className="toggle" /><span><strong>{t("Engedélyezett kihagyások")}</strong><small>{draft.skipAllowance} {t("alkalom")} / {t(draft.skipScope === "het" ? "hét" : "kihívás")}</small></span></label>
         </div>
