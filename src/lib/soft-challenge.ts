@@ -194,7 +194,7 @@ export const createInitialState = (): SoftState => ({
     skipsEnabled: true,
     skipAllowance: 1,
     skipScope: "het",
-    restDay: "vasárnap",
+    restDay: "",
     habits: { movement: true, reading: true, water: true, mindful: true },
     customHabits: []
   },
@@ -307,6 +307,14 @@ export function weekStart(value: string): string {
   const mondayOffset = (date.getDay() + 6) % 7;
   date.setDate(date.getDate() - mondayOffset);
   return localDateString(date);
+}
+
+export function restDayInWeek(date: string, logs: Record<string, DayLog>): string | undefined {
+  const start = weekStart(date);
+  return Object.entries(logs)
+    .filter(([loggedDate, log]) => Boolean(log.restDay) && weekStart(loggedDate) === start)
+    .map(([loggedDate]) => loggedDate)
+    .sort()[0];
 }
 
 function normalizeGroceryUnit(unit: string): { key: string; label: string; factor: number } {

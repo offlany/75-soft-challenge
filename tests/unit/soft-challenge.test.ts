@@ -8,6 +8,7 @@ import {
   createRestartState,
   dayNumber,
   progressPictureDays,
+  restDayInWeek,
   type DayLog
 } from "@/lib/soft-challenge";
 
@@ -16,6 +17,7 @@ describe("75 Soft calculations", () => {
     const state = createInitialState();
 
     expect(state.settings.active).toBe(false);
+    expect(state.settings.restDay).toBe("");
     expect(state.logs).toEqual({});
     expect(state.assignments).toEqual([]);
   });
@@ -52,6 +54,15 @@ describe("75 Soft calculations", () => {
     expect(completionForDay(pages, state.settings)).toBe(25);
     expect(completionForDay(minutes, state.settings)).toBe(25);
     expect(completionForDay(incomplete, state.settings)).toBe(0);
+  });
+
+  it("allows one rest day per Monday-Sunday week and excuses movement only", () => {
+    const state = createInitialState();
+    const logs = { "2026-12-31": { restDay: true } };
+
+    expect(restDayInWeek("2027-01-01", logs)).toBe("2026-12-31");
+    expect(restDayInWeek("2027-01-02", { ...logs, "2027-01-02": { restDay: true } })).toBe("2026-12-31");
+    expect(completionForDay(logs["2026-12-31"], state.settings)).toBe(25);
   });
 
   it("includes custom habits in daily completion", () => {

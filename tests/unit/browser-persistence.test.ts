@@ -28,4 +28,15 @@ describe("browser persistence", () => {
     expect(parseSoftState("{\"unexpected\":true}")).toBeNull();
     expect(parseSoftState("not-json")).toBeNull();
   });
+
+  it("preserves legacy rest-day settings and existing logs during import", () => {
+    const state = createInitialState();
+    state.settings.restDay = "vasárnap";
+    state.logs["2026-11-01"] = { restDay: true, water: 2 };
+
+    const imported = parseSoftState(serializeSoftState(state));
+
+    expect(imported?.settings.restDay).toBe("vasárnap");
+    expect(imported?.logs["2026-11-01"]).toEqual({ restDay: true, water: 2 });
+  });
 });
