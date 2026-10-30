@@ -4,23 +4,21 @@ import { CalendarDays, Check, CheckCircle2, Edit3, ImagePlus, Plus, Trash2 } fro
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { challengeEndDate, formatDate, makeId, type ChallengeSettings, type CustomHabit, type SoftState } from "@/lib/soft-challenge";
 import { parseSoftState, serializeSoftState } from "@/lib/soft-state-io";
+import { translateDay } from "@/lib/i18n";
+import { useLanguage } from "./language-provider";
 
-const baseHabitLabels = [
-  ["movement", "Mozgás", "30 perc mozgás"],
-  ["reading", "Olvasás", "10 oldal vagy 30 perc"],
-  ["water", "Víz", "Napi cél"],
-  ["mindful", "Tudatos étkezés", "Figyelmesen, jelenléttel"]
-] as const;
-
+const baseHabitLabels = [["movement", "Mozgás", "30 perc mozgás"], ["reading", "Olvasás", "10 oldal vagy 30 perc"], ["water", "Víz", "Napi cél"], ["mindful", "Tudatos étkezés", "Figyelmesen, jelenléttel"]] as const;
 const weekdays = ["hétfő", "kedd", "szerda", "csütörtök", "péntek", "szombat", "vasárnap"];
 const habitCategories = ["Mozgás", "Táplálkozás", "Mentális jóllét", "Saját fókusz"];
 const isStaticMode = process.env.NEXT_PUBLIC_STATIC_MODE === "true";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="field"><span>{label}</span>{children}</label>;
+  const { t } = useLanguage();
+  return <label className="field"><span>{t(label)}</span>{children}</label>;
 }
 
 export default function SettingsViewUx({ state, onUpdate }: { state: SoftState; onUpdate: (updater: (current: SoftState) => SoftState) => void }) {
+  const { t } = useLanguage();
   const settings = state.settings;
   const [draft, setDraft] = useState<ChallengeSettings>({ ...settings, customHabits: settings.customHabits ?? [] });
   const [notice, setNotice] = useState("");
@@ -30,9 +28,7 @@ export default function SettingsViewUx({ state, onUpdate }: { state: SoftState; 
   const [editingHabitName, setEditingHabitName] = useState("");
   const [editingHabitCategory, setEditingHabitCategory] = useState(habitCategories[3]);
 
-  useEffect(() => {
-    setDraft({ ...settings, customHabits: settings.customHabits ?? [] });
-  }, [settings]);
+  useEffect(() => setDraft({ ...settings, customHabits: settings.customHabits ?? [] }), [settings]);
 
   const save = () => {
     onUpdate((current) => ({ ...current, settings: draft }));
@@ -44,8 +40,7 @@ export default function SettingsViewUx({ state, onUpdate }: { state: SoftState; 
     event.preventDefault();
     const name = newHabitName.trim();
     if (!name) return;
-    const habit: CustomHabit = { id: makeId("habit"), name, category: newHabitCategory };
-    setDraft((current) => ({ ...current, customHabits: [...(current.customHabits ?? []), habit] }));
+    setDraft((current) => ({ ...current, customHabits: [...(current.customHabits ?? []), { id: makeId("habit"), name, category: newHabitCategory }] }));
     setNewHabitName("");
   };
 
@@ -63,7 +58,7 @@ export default function SettingsViewUx({ state, onUpdate }: { state: SoftState; 
   };
 
   const removeHabit = (habit: CustomHabit) => {
-    if (!window.confirm(`Eltávolítod a(z) „${habit.name}” saját szokást?`)) return;
+    if (!window.confirm(`${t("Eltávolítod a(z)")} „${habit.name}” ${t("saját szokást?")}`)) return;
     setDraft((current) => ({ ...current, customHabits: (current.customHabits ?? []).filter((item) => item.id !== habit.id) }));
     if (editingHabitId === habit.id) setEditingHabitId("");
   };
@@ -73,7 +68,7 @@ export default function SettingsViewUx({ state, onUpdate }: { state: SoftState; 
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = "75-soft-mentes.json";
+    anchor.download = "75-soft-backup.json";
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -84,46 +79,21 @@ export default function SettingsViewUx({ state, onUpdate }: { state: SoftState; 
     const reader = new FileReader();
     reader.onload = () => {
       const imported = parseSoftState(String(reader.result));
-      if (imported) {
-        onUpdate(() => imported);
-        setNotice("A mentés visszaállítva.");
-      } else {
-        setNotice("A fájl nem tartalmaz érvényes mentést.");
-      }
+      setNotice(imported ? "A mentés visszaállítva." : "A fájl nem tartalmaz érvényes mentést.");
+      if (imported) onUpdate(() => imported);
     };
     reader.readAsText(file);
   };
 
   return <div className="page-enter">
-    <div className="page-heading"><div><div className="eyebrow">BEÁLLÍTÁSOK</div><h1>A kihívásod, a szabályaid</h1><p className="muted">Bármikor finomhangolhatod. A korábbi naplóid megmaradnak.</p></div>{notice ? <span className="saved-notice"><CheckCircle2 size={16} /> {notice}</span> : <button className="primary-button" type="button" onClick={save}>Változtatások mentése <Check size={16} /></button>}</div>
-    <div className="settings-layout">
-      <div>
-        <section className="card settings-card">
-          <div className="card-heading"><div><div className="eyebrow">ALAPADATOK</div><h3>A kihívás idővonala</h3></div><span className="round-icon lavender"><CalendarDays size={19} /></span></div>
-          <div className="form-grid three"><Field label="Kezdő dátum"><input type="date" value={draft.startDate} onChange={(event) => setDraft({ ...draft, startDate: event.target.value })} /></Field><Field label="Kezdés időpontja"><input type="time" value={draft.startTime} onChange={(event) => setDraft({ ...draft, startTime: event.target.value })} /></Field><Field label="Befejezés"><input value={formatDate(challengeEndDate(draft.startDate), { year: "numeric", month: "long", day: "numeric" })} readOnly /></Field></div>
-        </section>
-        <section className="card settings-card">
-          <div className="card-heading"><div><div className="eyebrow">ALAP SZOKÁSOK</div><h3>Mi legyen benne a napjaidban?</h3><p className="muted">Kapcsold ki, ami most nem támogat, és később visszakapcsolhatod.</p></div></div>
-          <div className="settings-habit-list">{baseHabitLabels.map(([id, title, detail]) => <label key={id} className="settings-habit-row"><span className={`journal-habit-icon ${id}`}><Check size={17} /></span><span><strong>{title}</strong><small>{detail}</small></span><input type="checkbox" checked={Boolean(draft.habits[id])} onChange={() => setDraft({ ...draft, habits: { ...draft.habits, [id]: !draft.habits[id] } })} /><span className="toggle small-toggle" /></label>)}</div>
-        </section>
-        <section className="card settings-card custom-settings-card">
-          <div className="card-heading"><div><div className="eyebrow">SAJÁT SZOKÁSOK</div><h3>A te plusz fókuszaid</h3><p className="muted">Ezek a napi naplóban is megjelennek.</p></div><span className="round-icon lavender"><Plus size={19} /></span></div>
-          <form className="custom-habit-form settings-custom-form" onSubmit={addHabit}><input value={newHabitName} onChange={(event) => setNewHabitName(event.target.value)} placeholder="pl. 10 perc nyújtás" aria-label="Saját szokás neve" /><select value={newHabitCategory} onChange={(event) => setNewHabitCategory(event.target.value)} aria-label="Saját szokás kategóriája">{habitCategories.map((category) => <option key={category}>{category}</option>)}</select><button type="submit" className="secondary-button" disabled={!newHabitName.trim()}><Plus size={16} /> Hozzáadás</button></form>
-          <div className="settings-custom-list">{(draft.customHabits ?? []).length ? (draft.customHabits ?? []).map((habit) => editingHabitId === habit.id ? <div className="custom-habit-edit-row" key={habit.id}><input value={editingHabitName} onChange={(event) => setEditingHabitName(event.target.value)} aria-label="Saját szokás neve szerkesztéshez" /><select value={editingHabitCategory} onChange={(event) => setEditingHabitCategory(event.target.value)} aria-label="Saját szokás kategóriája szerkesztéshez">{habitCategories.map((category) => <option key={category}>{category}</option>)}</select><button type="button" className="primary-button" onClick={saveHabit}>Mentés</button><button type="button" className="icon-button" onClick={() => setEditingHabitId("")} aria-label="Szerkesztés megszakítása">×</button></div> : <div className="settings-custom-row" key={habit.id}><span><strong>{habit.name}</strong><small>{habit.category}</small></span><button type="button" className="icon-button" onClick={() => startEditHabit(habit)} aria-label={`${habit.name} szerkesztése`}><Edit3 size={16} /></button><button type="button" className="icon-button danger-icon" onClick={() => removeHabit(habit)} aria-label={`${habit.name} eltávolítása`}><Trash2 size={16} /></button></div>) : <p className="custom-habit-empty">Még nincs saját szokásod. Adj hozzá egyet, hogy a napi naplód tényleg rólad szóljon.</p>}</div>
-        </section>
-      </div>
-      <aside>
-        <section className="card settings-card settings-goals-card">
-          <div className="eyebrow">CÉLOK ÉS RUGALMASSÁG</div>
-          <Field label="Víz cél (liter / nap)"><input type="number" min="0.5" step="0.25" value={draft.waterTarget} onChange={(event) => setDraft({ ...draft, waterTarget: Number(event.target.value) })} /></Field>
-          <Field label="Progress kép minden ennyi napban"><input type="number" min="1" value={draft.pictureInterval} onChange={(event) => setDraft({ ...draft, pictureInterval: Math.max(1, Number(event.target.value)) })} /></Field>
-          <div className="setting-divider" />
-          <Field label="Heti pihenőnap"><select value={draft.restDay} onChange={(event) => setDraft({ ...draft, restDay: event.target.value })}>{weekdays.map((day) => <option key={day}>{day}</option>)}</select></Field>
-          <label className="toggle-row progress-picture-setting"><input type="checkbox" checked={draft.includeDayOnePicture} onChange={(event) => setDraft({ ...draft, includeDayOnePicture: event.target.checked })} /><span className="toggle" /><span><strong>Induló kép az 1. napon</strong><small>{draft.includeDayOnePicture ? "Első progress kép: az indulás napján esedékes." : "Az első kép a beállított időköz szerint lesz esedékes."}</small></span></label>
-          <p className="setting-help"><ImagePlus size={16} /> A progress kép emlékeztető a kihívás haladásáról. Ha az induló kép be van kapcsolva, az első kép nem későbbi emlékeztető, hanem az indulás napjának képe.</p>
-        </section>
-        <section className="card settings-card data-card"><div className="eyebrow">ADATBIZTONSÁG</div><h3>Helyi mentés</h3><p className="muted">{isStaticMode ? "A GitHub Pages változat IndexedDB-ben tárolja az adatokat, localStorage tartalékkal. Készíts időnként saját biztonsági mentést." : "A helyi változat SQLite adatbázisban tárolja az adatokat. Készíts időnként saját biztonsági mentést."}</p><div className="data-actions"><button type="button" className="secondary-button" onClick={exportData}>Exportálás</button><label className="secondary-button">Importálás<input type="file" accept="application/json" hidden onChange={importData} /></label></div></section>
-      </aside>
-    </div>
+    <div className="page-heading"><div><div className="eyebrow">{t("BEÁLLÍTÁSOK")}</div><h1>{t("A kihívásod, a szabályaid")}</h1><p className="muted">{t("Bármikor finomhangolhatod. A korábbi naplóid megmaradnak.")}</p></div>{notice ? <span className="saved-notice"><CheckCircle2 size={16} /> {t(notice)}</span> : <button className="primary-button" type="button" onClick={save}>{t("Változtatások mentése")} <Check size={16} /></button>}</div>
+    <div className="settings-layout"><div>
+      <section className="card settings-card"><div className="card-heading"><div><div className="eyebrow">{t("ALAPADATOK")}</div><h3>{t("A kihívás idővonala")}</h3></div><span className="round-icon lavender"><CalendarDays size={19} /></span></div><div className="form-grid three"><Field label="Kezdő dátum"><input type="date" value={draft.startDate} onChange={(event) => setDraft({ ...draft, startDate: event.target.value })} /></Field><Field label="Kezdés időpontja"><input type="time" value={draft.startTime} onChange={(event) => setDraft({ ...draft, startTime: event.target.value })} /></Field><Field label="Befejezés"><input value={formatDate(challengeEndDate(draft.startDate), { year: "numeric", month: "long", day: "numeric" })} readOnly /></Field></div></section>
+      <section className="card settings-card"><div className="card-heading"><div><div className="eyebrow">{t("ALAP SZOKÁSOK")}</div><h3>{t("Mi legyen benne a napjaidban?")}</h3><p className="muted">{t("Kapcsold ki, ami most nem támogat, és később visszakapcsolhatod.")}</p></div></div><div className="settings-habit-list">{baseHabitLabels.map(([id, title, detail]) => <label key={id} className="settings-habit-row"><span className={`journal-habit-icon ${id}`}><Check size={17} /></span><span><strong>{t(title)}</strong><small>{t(detail)}</small></span><input type="checkbox" checked={Boolean(draft.habits[id])} onChange={() => setDraft({ ...draft, habits: { ...draft.habits, [id]: !draft.habits[id] } })} /><span className="toggle small-toggle" /></label>)}</div></section>
+      <section className="card settings-card custom-settings-card"><div className="card-heading"><div><div className="eyebrow">{t("SAJÁT SZOKÁSOK")}</div><h3>{t("A te plusz fókuszaid")}</h3><p className="muted">{t("Ezek a napi naplóban is megjelennek.")}</p></div><span className="round-icon lavender"><Plus size={19} /></span></div><form className="custom-habit-form settings-custom-form" onSubmit={addHabit}><input value={newHabitName} onChange={(event) => setNewHabitName(event.target.value)} placeholder={t("pl. 10 perc nyújtás")} aria-label={t("Saját szokás neve")} /><select value={newHabitCategory} onChange={(event) => setNewHabitCategory(event.target.value)} aria-label={t("Saját szokás kategóriája")}>{habitCategories.map((category) => <option key={category} value={category}>{t(category)}</option>)}</select><button type="submit" className="secondary-button" disabled={!newHabitName.trim()}><Plus size={16} /> {t("Hozzáadás")}</button></form><div className="settings-custom-list">{(draft.customHabits ?? []).length ? (draft.customHabits ?? []).map((habit) => editingHabitId === habit.id ? <div className="custom-habit-edit-row" key={habit.id}><input value={editingHabitName} onChange={(event) => setEditingHabitName(event.target.value)} aria-label={t("Saját szokás neve szerkesztéshez")} /><select value={editingHabitCategory} onChange={(event) => setEditingHabitCategory(event.target.value)} aria-label={t("Saját szokás kategóriája szerkesztéshez")}>{habitCategories.map((category) => <option key={category} value={category}>{t(category)}</option>)}</select><button type="button" className="primary-button" onClick={saveHabit}>{t("Mentés")}</button><button type="button" className="icon-button" onClick={() => setEditingHabitId("")} aria-label={t("Szerkesztés megszakítása")}>×</button></div> : <div className="settings-custom-row" key={habit.id}><span><strong>{habit.name}</strong><small>{t(habit.category)}</small></span><button type="button" className="icon-button" onClick={() => startEditHabit(habit)} aria-label={`${habit.name} ${t("szerkesztése")}`}><Edit3 size={16} /></button><button type="button" className="icon-button danger-icon" onClick={() => removeHabit(habit)} aria-label={`${habit.name} ${t("eltávolítása")}`}><Trash2 size={16} /></button></div>) : <p className="custom-habit-empty">{t("Még nincs saját szokásod. Adj hozzá egyet, hogy a napi naplód tényleg rólad szóljon.")}</p>}</div></section>
+    </div><aside>
+      <section className="card settings-card settings-goals-card"><div className="eyebrow">{t("CÉLOK ÉS RUGALMASSÁG")}</div><Field label="Víz cél (liter / nap)"><input type="number" min="0.5" step="0.25" value={draft.waterTarget} onChange={(event) => setDraft({ ...draft, waterTarget: Number(event.target.value) })} /></Field><Field label="Progress kép minden ennyi napban"><input type="number" min="1" value={draft.pictureInterval} onChange={(event) => setDraft({ ...draft, pictureInterval: Math.max(1, Number(event.target.value)) })} /></Field><div className="setting-divider" /><Field label="Heti pihenőnap"><select value={draft.restDay} onChange={(event) => setDraft({ ...draft, restDay: event.target.value })}>{weekdays.map((day) => <option key={day} value={day}>{translateDay(day)}</option>)}</select></Field><label className="toggle-row progress-picture-setting"><input type="checkbox" checked={draft.includeDayOnePicture} onChange={(event) => setDraft({ ...draft, includeDayOnePicture: event.target.checked })} /><span className="toggle" /><span><strong>{t("Induló kép az 1. napon")}</strong><small>{draft.includeDayOnePicture ? t("Első progress kép: az indulás napján esedékes.") : t("Az első kép a beállított időköz szerint lesz esedékes.")}</small></span></label><p className="setting-help"><ImagePlus size={16} /> {t("A progress kép emlékeztető a kihívás haladásáról. Ha az induló kép be van kapcsolva, az első kép nem későbbi emlékeztető, hanem az indulás napjának képe.")}</p></section>
+      <section className="card settings-card data-card"><div className="eyebrow">{t("ADATBIZTONSÁG")}</div><h3>{t("Helyi mentés")}</h3><p className="muted">{t(isStaticMode ? "A GitHub Pages változat IndexedDB-ben tárolja az adatokat, localStorage tartalékkal. Készíts időnként saját biztonsági mentést." : "A helyi változat SQLite adatbázisban tárolja az adatokat. Készíts időnként saját biztonsági mentést.")}</p><div className="data-actions"><button type="button" className="secondary-button" onClick={exportData}>{t("Exportálás")}</button><label className="secondary-button">{t("Importálás")}<input type="file" accept="application/json" hidden onChange={importData} /></label></div></section>
+    </aside></div>
   </div>;
 }

@@ -6,7 +6,7 @@ A locally running, customizable 75-day challenge tracker and meal planner built 
 
 > **Live Demo:** pending the first approved deployment. The configured target is [GitHub Pages](https://offlany.github.io/75-soft-challenge/), but this repository preparation has not deployed it yet.
 
-The application interface is currently in Hungarian. The repository documentation is in English so the implementation and portfolio context are easy to review.
+The application interface is available in Hungarian and English. On first load it detects the browser language, and the language switcher stores the user's choice in browser storage without changing challenge data.
 
 ## Project overview
 
@@ -20,7 +20,7 @@ The project demonstrates a small full-stack-to-static migration:
 
 | Area | Implementation status |
 | --- | --- |
-| Challenge setup | Custom start date/time, water target, active habits, rest day, skip rules, and progress-picture interval |
+| Challenge setup | Custom start date/time, water target, active habits, custom habits, rest day, skip rules, and progress-picture interval |
 | Daily tracking | Movement, reading, water, mindful eating, self-care, alcohol notes, rest days, and free-form notes |
 | Calendar | Interactive month calendar with challenge days, planned meals, and scheduled progress-picture events |
 | Progress pictures | Scheduled dates plus local image upload stored in the application state |
@@ -28,7 +28,8 @@ The project demonstrates a small full-stack-to-static migration:
 | Meal planning | Weekly breakfast/lunch/dinner assignments backed by cooking batches and serving limits |
 | Grocery lists | Automatic ingredient aggregation from meal-prep batches, pantry/purchased status, and manual items |
 | Data portability | JSON export and import with basic state-shape validation |
-| Persistence | Local SQLite in server mode; IndexedDB with `localStorage` fallback in static mode |
+| Persistence | Local SQLite in server mode; IndexedDB with `localStorage` fallback in static mode; language preference is stored separately |
+| Localization | Centralized HU/EN translations, locale-aware dates and numbers, and display-only localization for all 30 built-in recipes |
 
 ## Technology
 
@@ -84,6 +85,10 @@ npm run build:pages
 
 This command temporarily excludes the local SQLite API route while Next.js creates the export, then restores the route before exiting. The exported application starts with a clean onboarding screen and stores each visitor's setup and progress in browser storage. The local source remains available for `npm run dev` and `npm run build`. The exported application is configured for the repository subpath `/75-soft-challenge/`, supports trailing-slash direct loading, and uses browser persistence.
 
+### Language and recipe data
+
+The HU/EN switcher is available in the top bar and on onboarding. Built-in recipes keep their stable IDs and Hungarian source data; English names, categories, ingredients, descriptions, and instructions are applied as a display layer. Custom recipes and user-entered text are never overwritten by a language change. Dates and numbers use the active locale while quantities remain metric.
+
 The intended URL after a successful, approved deployment is:
 
 ```text
@@ -125,7 +130,7 @@ The GitHub Pages build is static and does not provide a shared backend. Each vis
 - Browser storage quotas and private-browsing restrictions can limit the size or lifetime of progress-image data.
 - Imported JSON is accepted when it has the expected top-level state fields; validate backups before importing them.
 - The Pages workflow must be enabled in the repository settings with GitHub Actions as the Pages source before the first deployment.
-- The application interface remains Hungarian.
+- Language detection falls back to English for non-Hungarian browser languages; the explicit HU/EN preference is stored in browser-local storage.
 
 ## License
 
