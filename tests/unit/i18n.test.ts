@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { detectBrowserLocale, formatCount, readPreferredLocale, savePreferredLocale, setLocale, translate, translateDay } from "@/lib/i18n";
+import { detectBrowserLocale, formatCount, missingTranslations, readPreferredLocale, savePreferredLocale, setLocale, translate, translateDay, translations } from "@/lib/i18n";
 import { builtInRecipeIds, localizeRecipe } from "@/lib/recipe-localization";
 import { formatDate, seedRecipes } from "@/lib/soft-challenge";
 
@@ -51,5 +51,10 @@ describe("HU/EN localization", () => {
 
     const custom = { ...source!, id: "recipe-custom", name: "My family recipe", instructions: ["Keep my wording."] };
     expect(localizeRecipe(custom, "en")).toEqual(custom);
+  });
+
+  it("detects missing English translation keys", () => {
+    expect(missingTranslations(Object.keys(translations))).toEqual([]);
+    expect(missingTranslations(["This key was not registered"])).toEqual(["This key was not registered"]);
   });
 });

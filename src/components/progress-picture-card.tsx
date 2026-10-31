@@ -5,7 +5,6 @@ import { useLanguage } from "./language-provider";
 export function ProgressPictureCard({ settings, today, nextPicture, photos, phase }: { settings: ChallengeSettings; today: string; nextPicture?: string; photos: ProgressPhoto[]; phase: ChallengePhase }) {
   const { t } = useLanguage();
   const firstPictureDue = settings.includeDayOnePicture && nextPicture === settings.startDate && !photos.some((photo) => photo.date === settings.startDate);
-  const firstPictureCopy = phase === "upcoming" ? "Az első progress kép a kihívás indulásakor lesz esedékes." : "Ma, az indulás napján esedékes. Ez lesz a kihívás első progress képe.";
   const daysUntil = nextPicture ? Math.max(0, dayNumber(today, nextPicture) - 1) : 0;
 
   return <section className="card overview-progress-card" data-testid="progress-picture-card">

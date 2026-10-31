@@ -75,6 +75,8 @@ export type DayLog = {
   customHabits?: Record<string, boolean>;
 };
 
+export const trackedHabits: HabitId[] = ["movement", "reading", "water", "mindful"];
+
 export type CookingBatch = {
   id: string;
   recipeId: string;
@@ -229,6 +231,11 @@ export function parseLocalDate(value: string): Date {
   return new Date(year, month - 1, day);
 }
 
+export function isValidCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  return localDateString(parseLocalDate(value)) === value;
+}
+
 export function addDays(value: string, amount: number): string {
   const date = parseLocalDate(value);
   date.setDate(date.getDate() + amount);
@@ -306,6 +313,17 @@ export function isReadingComplete(log: DayLog | undefined): boolean {
   return (log?.readingPages ?? 0) >= 10 || (log?.readingMinutes ?? 0) >= 30;
 }
 
+export function normalizeDayLogPatch(patch: Partial<DayLog>): Partial<DayLog> {
+  const normalized = { ...patch };
+  const numericKeys = ["water", "readingPages", "readingMinutes", "exerciseMinutes"] as const;
+  numericKeys.forEach((key) => {
+    if (!(key in normalized)) return;
+    const value = normalized[key];
+    normalized[key] = typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+  });
+  return normalized;
+}
+
 export function isDayHabitComplete(habit: HabitId, log: DayLog | undefined, settings: ChallengeSettings): boolean {
   if (!settings.habits[habit]) return true;
   if (log?.skips?.includes(habit)) return false;
@@ -313,6 +331,26 @@ export function isDayHabitComplete(habit: HabitId, log: DayLog | undefined, sett
   if (habit === "reading") return isReadingComplete(log);
   if (habit === "water") return (log?.water ?? 0) >= settings.waterTarget;
   return Boolean(log?.mindful);
+}
+
+export function isChallengeLogDate(settings: ChallengeSettings, date: string, today = localDateString()): boolean {
+  return isChallengeDate(settings, date) && date <= today;
+}
+
+export function usedSkipsForDate(settings: ChallengeSettings, logs: Record<string, DayLog>, date: string, today = localDateString()): number {
+  if (!settings.skipsEnabled || !isChallengeLogDate(settings, date, today)) return 0;
+  const dates = Object.keys(logs).filter((loggedDate) => {
+    if (!isChallengeLogDate(settings, loggedDate, today)) return false;
+    return settings.skipScope === "kihivas" || weekStart(loggedDate) === weekStart(date);
+  });
+  return dates.reduce((total, loggedDate) => total + new Set(logs[loggedDate]?.skips ?? []).size, 0);
+}
+
+export function canUseSkip(settings: ChallengeSettings, logs: Record<string, DayLog>, date: string, habit: HabitId, today = localDateString()): boolean {
+  const log = logs[date];
+  if (!settings.skipsEnabled || !isChallengeLogDate(settings, date, today) || !settings.habits[habit]) return false;
+  if (log?.skips?.includes(habit)) return false;
+  return usedSkipsForDate(settings, logs, date, today) < Math.max(0, settings.skipAllowance);
 }
 
 export function isCustomHabitComplete(habitId: string, log: DayLog | undefined): boolean {
@@ -362,17 +400,23 @@ function normalizeGroceryUnit(unit: string): { key: string; label: string; facto
   if (["g", "gramm"].includes(normalized)) return { key: "g", label: "g", factor: 1 };
   if (["l", "liter", "litre"].includes(normalized)) return { key: "ml", label: "ml", factor: 1000 };
   if (["ml", "milliliter", "millilitre"].includes(normalized)) return { key: "ml", label: "ml", factor: 1 };
-  if (["db", "darab"].includes(normalized)) return { key: "db", label: "db", factor: 1 };
+  if (["db", "darab", "pcs", "pc", "piece", "pieces"].includes(normalized)) return { key: "db", label: "db", factor: 1 };
   return { key: normalized, label: unit, factor: 1 };
 }
 
-export function aggregateGroceries(state: SoftState): { key: string; name: string; quantity: number; unit: string; category: string }[] {
+export function aggregateGroceries(state: SoftState, selectedWeek?: string): { key: string; name: string; quantity: number; unit: string; category: string }[] {
   const totals = new Map<string, { key: string; name: string; quantity: number; unit: string; category: string }>();
-  state.batches.forEach((batch) => {
+  const batches = state.batches.filter((batch) => {
+    if (!selectedWeek) return true;
+    return batch.weekStart === selectedWeek || state.assignments.some((assignment) => assignment.batchId === batch.id && weekStart(assignment.date) === selectedWeek);
+  });
+  batches.forEach((batch) => {
     const currentRecipe = state.recipes.find((item) => item.id === batch.recipeId);
     if (!currentRecipe) return;
+    const scopedServings = selectedWeek && batch.weekStart !== selectedWeek ? state.assignments.filter((assignment) => assignment.batchId === batch.id && weekStart(assignment.date) === selectedWeek).reduce((sum, assignment) => sum + assignment.servings, 0) : batch.servings;
+    if (selectedWeek && scopedServings <= 0) return;
     currentRecipe.ingredients.forEach((item) => {
-      const ratio = batch.servings / currentRecipe.servings;
+      const ratio = scopedServings / currentRecipe.servings;
       const normalizedName = item.name.toLocaleLowerCase("hu-HU").trim();
       const normalizedUnit = normalizeGroceryUnit(item.unit);
       const key = `${normalizedName}|${normalizedUnit.key}`;
