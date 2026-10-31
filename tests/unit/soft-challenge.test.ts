@@ -2,13 +2,21 @@ import { describe, expect, it } from "vitest";
 import {
   addDays,
   aggregateGroceries,
+  canLogDate,
+  challengeDay,
+  challengePhase,
   challengeEndDate,
+  calendarDayDifference,
   completionForDay,
   createInitialState,
   createRestartState,
   dayNumber,
+  daysUntilStart,
+  isMealPlanDate,
+  mealAssignmentsOutsideChallenge,
   progressPictureDays,
   restDayInWeek,
+  statusForDay,
   type DayLog
 } from "@/lib/soft-challenge";
 
@@ -44,6 +52,56 @@ describe("75 Soft calculations", () => {
     expect(dayNumber("2026-11-01", "2027-01-14")).toBe(75);
     expect(challengeEndDate("2026-11-01")).toBe("2027-01-14");
     expect(addDays("2026-11-01", 74)).toBe("2027-01-14");
+  });
+
+  it("keeps future starts upcoming and transitions on the configured date", () => {
+    const state = createInitialState();
+    state.settings.active = true;
+    state.settings.startDate = "2026-11-01";
+
+    expect(challengePhase(state.settings, "2026-10-31")).toBe("upcoming");
+    expect(dayNumber(state.settings.startDate, "2026-10-31")).toBe(0);
+    expect(challengeDay(state.settings, "2026-10-31")).toBe(0);
+    expect(challengePhase(state.settings, "2026-11-01")).toBe("active");
+    expect(challengeDay(state.settings, "2026-11-01")).toBe(1);
+    expect(challengeDay(state.settings, "2026-11-02")).toBe(2);
+    expect(challengePhase(state.settings, "2027-01-15")).toBe("completed");
+  });
+
+  it("calculates countdowns and calendar days without DST drift", () => {
+    expect(daysUntilStart("2026-11-01", "2026-10-31")).toBe(1);
+    expect(daysUntilStart("2026-11-05", "2026-10-31")).toBe(5);
+    expect(calendarDayDifference("2026-03-28", "2026-03-30")).toBe(2);
+    expect(calendarDayDifference("2026-12-31", "2027-01-02")).toBe(2);
+  });
+
+  it("blocks daily tracking before the challenge and only permits meal dates in the 75-day window", () => {
+    const state = createInitialState();
+    state.settings.active = true;
+    state.settings.startDate = "2026-11-01";
+
+    expect(canLogDate(state.settings, "2026-10-31", "2026-10-31")).toBe(false);
+    expect(canLogDate(state.settings, "2026-11-01", "2026-11-01")).toBe(true);
+    expect(isMealPlanDate(state.settings, "2026-10-31")).toBe(false);
+    expect(isMealPlanDate(state.settings, "2026-11-01")).toBe(true);
+    expect(isMealPlanDate(state.settings, "2027-01-14")).toBe(true);
+    expect(isMealPlanDate(state.settings, "2027-01-15")).toBe(false);
+    expect(statusForDay("2026-11-01", state.settings, {}, "2026-10-31")).toBe("future");
+    expect(statusForDay("2026-11-01", state.settings, {}, "2026-11-01")).toBe("current");
+  });
+
+  it("identifies only the meal assignments made invalid by a changed start date", () => {
+    const state = createInitialState();
+    state.settings.active = true;
+    state.settings.startDate = "2026-11-01";
+    const assignments = [
+      { id: "meal-1", date: "2026-11-01", slot: "ebed" as const, batchId: "batch-1", servings: 1 },
+      { id: "meal-2", date: "2026-11-02", slot: "vacsora" as const, batchId: "batch-1", servings: 1 }
+    ];
+    const shiftedSettings = { ...state.settings, startDate: "2026-11-02" };
+
+    expect(mealAssignmentsOutsideChallenge(shiftedSettings, assignments).map((item) => item.id)).toEqual(["meal-1"]);
+    expect(mealAssignmentsOutsideChallenge(state.settings, assignments)).toEqual([]);
   });
 
   it("completes reading when either pages or minutes reaches target", () => {

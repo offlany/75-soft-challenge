@@ -1,6 +1,7 @@
 export type HabitId = "movement" | "reading" | "water" | "mindful";
 export type MealSlot = "reggeli" | "ebed" | "vacsora";
 export type AppLocale = "hu" | "en";
+export type ChallengePhase = "upcoming" | "active" | "completed";
 
 let activeLocale: AppLocale = "hu";
 
@@ -234,14 +235,53 @@ export function addDays(value: string, amount: number): string {
   return localDateString(date);
 }
 
+function calendarOrdinal(value: string): number {
+  const date = parseLocalDate(value);
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000;
+}
+
+export function calendarDayDifference(from: string, to: string): number {
+  return calendarOrdinal(to) - calendarOrdinal(from);
+}
+
 export function dayNumber(startDate: string, date: string): number {
-  const start = parseLocalDate(startDate).getTime();
-  const current = parseLocalDate(date).getTime();
-  return Math.floor((current - start) / 86400000) + 1;
+  return calendarDayDifference(startDate, date) + 1;
 }
 
 export function challengeEndDate(startDate: string): string {
   return addDays(startDate, 74);
+}
+
+export function challengePhase(settings: ChallengeSettings, today = localDateString()): ChallengePhase {
+  if (!settings.active || !settings.startDate || today < settings.startDate) return "upcoming";
+  if (today > challengeEndDate(settings.startDate)) return "completed";
+  return "active";
+}
+
+export function challengeDay(settings: ChallengeSettings, date: string): number {
+  if (!settings.active) return 0;
+  const number = dayNumber(settings.startDate, date);
+  return number >= 1 && number <= 75 ? number : 0;
+}
+
+export function daysUntilStart(startDate: string, today = localDateString()): number {
+  return Math.max(0, calendarDayDifference(today, startDate));
+}
+
+export function isChallengeDate(settings: ChallengeSettings, date: string): boolean {
+  return Boolean(settings.active && settings.startDate && date >= settings.startDate && date <= challengeEndDate(settings.startDate));
+}
+
+export function isMealPlanDate(settings: ChallengeSettings, date: string): boolean {
+  return isChallengeDate(settings, date);
+}
+
+export function mealAssignmentsOutsideChallenge(settings: ChallengeSettings, assignments: MealAssignment[]): MealAssignment[] {
+  return assignments.filter((assignment) => !isMealPlanDate(settings, assignment.date));
+}
+
+export function canLogDate(settings: ChallengeSettings, date: string, today = localDateString()): boolean {
+  return challengePhase(settings, today) === "active" && isChallengeDate(settings, date) && date <= today;
 }
 
 export function formatDate(value: string, options?: Intl.DateTimeFormatOptions): string {
@@ -288,11 +328,10 @@ export function completionForDay(log: DayLog | undefined, settings: ChallengeSet
   return Math.round(((completed + customHabits.filter((habit) => isCustomHabitComplete(habit.id, log)).length) / total) * 100);
 }
 
-export function statusForDay(date: string, settings: ChallengeSettings, logs: Record<string, DayLog>): "future" | "current" | "complete" | "partial" | "incomplete" | "skip" {
+export function statusForDay(date: string, settings: ChallengeSettings, logs: Record<string, DayLog>, today = localDateString()): "future" | "current" | "complete" | "partial" | "incomplete" | "skip" {
   if (!settings.active) return "future";
-  const number = dayNumber(settings.startDate, date);
-  const today = localDateString();
-  if (number < 1 || number > 75 || date > today) return "future";
+  const number = challengeDay(settings, date);
+  if (!number || date > today) return "future";
   if (date === today) return "current";
   const log = logs[date];
   if (log?.skips?.length) return "skip";
