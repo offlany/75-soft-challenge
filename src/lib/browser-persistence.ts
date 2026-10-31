@@ -56,11 +56,11 @@ async function readIndexedDb(indexedDb: IDBFactory): Promise<SoftState | null> {
   });
 }
 
-async function writeIndexedDb(indexedDb: IDBFactory, state: SoftState): Promise<void> {
+async function writeIndexedDb(indexedDb: IDBFactory, serializedState: string): Promise<void> {
   const database = await openDatabase(indexedDb);
   return new Promise((resolve, reject) => {
     const transaction = database.transaction(STORE_NAME, "readwrite");
-    transaction.objectStore(STORE_NAME).put(serializeSoftState(state), STATE_KEY);
+    transaction.objectStore(STORE_NAME).put(serializedState, STATE_KEY);
     transaction.oncomplete = () => {
       database.close();
       resolve();
@@ -97,20 +97,29 @@ export async function loadBrowserState(): Promise<BrowserStateResult> {
   }
 }
 
-export async function saveBrowserState(state: SoftState): Promise<BrowserPersistenceBackend> {
+async function saveBrowserStateNow(serializedState: string): Promise<BrowserPersistenceBackend> {
   const indexedDb = indexedDbAvailable();
   if (indexedDb) {
     try {
-      await writeIndexedDb(indexedDb, state);
+      await writeIndexedDb(indexedDb, serializedState);
       return "indexeddb";
     } catch {}
   }
 
   if (typeof window === "undefined") throw new Error("Browser storage is unavailable outside the browser.");
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    window.localStorage.setItem(STORAGE_KEY, serializedState);
     return "localStorage";
   } catch {
     throw new Error("Browser storage is unavailable.");
   }
+}
+
+let browserSaveQueue: Promise<void> = Promise.resolve();
+
+export function saveBrowserState(state: SoftState): Promise<BrowserPersistenceBackend> {
+  const serializedState = serializeSoftState(state);
+  const nextSave = browserSaveQueue.then(() => saveBrowserStateNow(serializedState));
+  browserSaveQueue = nextSave.then(() => undefined, () => undefined);
+  return nextSave;
 }
