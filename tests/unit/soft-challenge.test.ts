@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addDays,
   aggregateGroceries,
+  canUseSkip,
   canLogDate,
   challengeDay,
   challengePhase,
@@ -14,9 +15,11 @@ import {
   daysUntilStart,
   isMealPlanDate,
   mealAssignmentsOutsideChallenge,
+  normalizeDayLogPatch,
   progressPictureDays,
   restDayInWeek,
   statusForDay,
+  usedSkipsForDate,
   type DayLog
 } from "@/lib/soft-challenge";
 
@@ -73,6 +76,8 @@ describe("75 Soft calculations", () => {
     expect(daysUntilStart("2026-11-05", "2026-10-31")).toBe(5);
     expect(calendarDayDifference("2026-03-28", "2026-03-30")).toBe(2);
     expect(calendarDayDifference("2026-12-31", "2027-01-02")).toBe(2);
+    expect(calendarDayDifference("2028-02-28", "2028-03-01")).toBe(2);
+    expect(dayNumber("2026-11-01", "2027-01-15")).toBe(76);
   });
 
   it("blocks daily tracking before the challenge and only permits meal dates in the 75-day window", () => {
@@ -112,6 +117,29 @@ describe("75 Soft calculations", () => {
     expect(completionForDay(pages, state.settings)).toBe(25);
     expect(completionForDay(minutes, state.settings)).toBe(25);
     expect(completionForDay(incomplete, state.settings)).toBe(0);
+  });
+
+  it("keeps recorded water above the target and normalizes invalid numeric input", () => {
+    const state = createInitialState();
+    expect(normalizeDayLogPatch({ water: 4.5 })).toEqual({ water: 4.5 });
+    expect(normalizeDayLogPatch({ water: Number.NaN, exerciseMinutes: -2 })).toEqual({ water: 0, exerciseMinutes: 0 });
+    expect(completionForDay({ water: 4.5 }, state.settings)).toBe(25);
+  });
+
+  it("enforces skip allowance within the configured scope and ignores duplicate entries", () => {
+    const state = createInitialState();
+    state.settings.active = true;
+    state.settings.startDate = "2026-11-01";
+    state.settings.skipAllowance = 1;
+    state.logs = {
+      "2026-11-02": { skips: ["mindful", "mindful"] },
+      "2026-11-03": { skips: ["water"] },
+      "2026-11-10": { skips: ["reading"] }
+    };
+    expect(usedSkipsForDate(state.settings, state.logs, "2026-11-03", "2026-11-12")).toBe(2);
+    expect(canUseSkip(state.settings, state.logs, "2026-11-03", "movement", "2026-11-12")).toBe(false);
+    state.settings.skipScope = "kihivas";
+    expect(usedSkipsForDate(state.settings, state.logs, "2026-11-03", "2026-11-12")).toBe(3);
   });
 
   it("allows one rest day per Monday-Sunday week and excuses movement only", () => {
@@ -168,5 +196,20 @@ describe("75 Soft calculations", () => {
     const rice = aggregateGroceries(state).find((item) => item.name === "rizs");
 
     expect(rice).toEqual(expect.objectContaining({ quantity: 2000, unit: "g" }));
+  });
+
+  it("limits groceries to the selected week while including assigned leftovers", () => {
+    const state = createInitialState();
+    state.batches = [
+      { id: "batch-current", recipeId: "r25", weekStart: "2026-11-02", servings: 4 },
+      { id: "batch-future", recipeId: "r25", weekStart: "2026-11-09", servings: 4 }
+    ];
+    state.assignments = [{ id: "meal-leftover", date: "2026-11-09", slot: "ebed", batchId: "batch-current", servings: 1 }];
+
+    const currentWeek = aggregateGroceries(state, "2026-11-02");
+    const futureWeek = aggregateGroceries(state, "2026-11-09");
+
+    expect(currentWeek.find((item) => item.name === "rizs")?.quantity).toBe(300);
+    expect(futureWeek.find((item) => item.name === "rizs")?.quantity).toBe(375);
   });
 });
