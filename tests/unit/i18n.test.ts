@@ -30,6 +30,15 @@ describe("HU/EN localization", () => {
     expect(formatDate("2026-01-05", { month: "long", day: "numeric" })).toBe("5 January");
   });
 
+  it("keeps the upcoming countdown natural in both languages", () => {
+    setLocale("hu");
+    expect(translate("Holnap indul a kihívásod")).toBe("Holnap indul a kihívásod");
+    expect(translate("nap múlva indul a kihívásod")).toBe("nap múlva indul a kihívásod");
+    setLocale("en");
+    expect(translate("Holnap indul a kihívásod")).toBe("Your challenge starts tomorrow");
+    expect(translate("nap múlva indul a kihívásod")).toBe("days until your challenge starts");
+  });
+
   it("localizes all built-in recipes by stable ID and preserves custom recipes", () => {
     expect(builtInRecipeIds()).toHaveLength(30);
     const source = seedRecipes.find((recipe) => recipe.id === "r1");

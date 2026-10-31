@@ -37,12 +37,17 @@ import Image from "next/image";
 import {
   addDays,
   aggregateGroceries,
+  canLogDate,
+  challengePhase,
   challengeEndDate,
   completionForDay,
   createInitialState,
   createRestartState,
   dayNumber,
+  daysUntilStart,
   formatDate,
+  isChallengeDate,
+  isMealPlanDate,
   isDayHabitComplete,
   localDateString,
   makeId,
@@ -52,6 +57,7 @@ import {
   statusForDay,
   weekStart,
   type ChallengeSettings,
+  type ChallengePhase,
   type CookingBatch,
   type DayLog,
   type HabitId,
@@ -126,6 +132,7 @@ function SoftChallengeApp() {
   const [saveState, setSaveState] = useState<"mentve" | "mentés…" | "mentés sikertelen" | "helyi mentéssel">("mentve");
   const [storageError, setStorageError] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [clockTick, setClockTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -192,20 +199,45 @@ function SoftChallengeApp() {
 
   const settings = state.settings;
   const today = localDateString();
-  const inChallenge = settings.active && dayNumber(settings.startDate, today) >= 1 && dayNumber(settings.startDate, today) <= 75;
-  const activeDate = inChallenge ? today : settings.active && today < settings.startDate ? settings.startDate : selectedDate;
-  const currentDay = settings.active ? Math.max(1, Math.min(75, dayNumber(settings.startDate, activeDate))) : 0;
-  const elapsed = settings.active ? Math.max(0, Math.min(75, dayNumber(settings.startDate, today))) : 0;
-  const timePercent = settings.active ? (elapsed / 75) * 100 : 0;
+  const phase = challengePhase(settings, today);
+  const activeDate = phase === "active" ? today : selectedDate;
+  const currentDay = phase === "active" ? dayNumber(settings.startDate, today) : phase === "completed" ? 75 : 0;
+  const elapsed = phase === "active" ? dayNumber(settings.startDate, today) : phase === "completed" ? 75 : 0;
+  const timePercent = (elapsed / 75) * 100;
   const log = defaultLog(state.logs[activeDate]);
-  const dailyCompletion = completionForDay(log, settings);
+  const dailyCompletion = phase === "upcoming" || !isChallengeDate(settings, activeDate) ? 0 : completionForDay(log, settings);
   const pictureDays = progressPictureDays(settings);
   const nextPicture = pictureDays.find((date) => date >= today && !state.photos.some((photo) => photo.date === date));
+  const countdownDays = phase === "upcoming" ? daysUntilStart(settings.startDate, today) : 0;
+
+  useEffect(() => {
+    const refreshDate = () => setClockTick((value) => value + 1);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshDate();
+    };
+    const now = new Date();
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+    const timeout = window.setTimeout(refreshDate, Math.max(1000, nextMidnight.getTime() - now.getTime()));
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearTimeout(timeout);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [clockTick]);
+
+  useEffect(() => {
+    if (!loaded || !settings.active || phase !== "upcoming") return;
+    const start = parseLocalDate(settings.startDate);
+    setPlannerWeek(weekStart(settings.startDate));
+    setCalendarDate(start);
+    setSelectedDate(settings.startDate);
+  }, [loaded, settings.active, settings.startDate, phase]);
 
   const updateState = (updater: (current: SoftState) => SoftState) => setState((current) => updater(current));
 
   const updateLog = (date: string, patch: Partial<DayLog>) => {
     updateState((current) => {
+      if (!canLogDate(current.settings, date, localDateString())) return current;
       if (patch.restDay === true && !current.logs[date]?.restDay) {
         const existing = restDayInWeek(date, current.logs);
         if (existing && existing !== date) return current;
@@ -216,8 +248,7 @@ function SoftChallengeApp() {
 
   const setRestDay = (date: string, value: boolean) => {
     updateState((current) => {
-      const number = dayNumber(current.settings.startDate, date);
-      if (number < 1 || number > 75) return current;
+      if (challengePhase(current.settings, localDateString()) === "upcoming" || !isChallengeDate(current.settings, date)) return current;
       if (value) {
         const existing = restDayInWeek(date, current.logs);
         if (existing && existing !== date) return current;
@@ -229,9 +260,7 @@ function SoftChallengeApp() {
   const moveRestDay = (from: string, to: string) => {
     updateState((current) => {
       if (weekStart(from) !== weekStart(to)) return current;
-      const fromNumber = dayNumber(current.settings.startDate, from);
-      const toNumber = dayNumber(current.settings.startDate, to);
-      if (fromNumber < 1 || fromNumber > 75 || toNumber < 1 || toNumber > 75) return current;
+      if (challengePhase(current.settings, localDateString()) === "upcoming" || !isChallengeDate(current.settings, from) || !isChallengeDate(current.settings, to)) return current;
       const existing = restDayInWeek(to, current.logs);
       if (existing && existing !== from) return current;
       return { ...current, logs: { ...current.logs, [from]: { ...defaultLog(current.logs[from]), restDay: false }, [to]: { ...defaultLog(current.logs[to]), restDay: true } } };
@@ -241,6 +270,8 @@ function SoftChallengeApp() {
   const startChallenge = (nextSettings: ChallengeSettings) => {
     updateState((current) => ({ ...current, settings: { ...nextSettings, active: true } }));
     setSelectedDate(nextSettings.startDate);
+    setPlannerWeek(weekStart(nextSettings.startDate));
+    setCalendarDate(parseLocalDate(nextSettings.startDate));
     setView("overview");
   };
 
@@ -272,11 +303,11 @@ function SoftChallengeApp() {
         <nav className="side-nav">
           {navItems.map(({ id, labelKey, icon }) => {
             const Icon = icon;
-            return <button type="button" key={id} className={view === id ? "active" : ""} onClick={() => { setView(id); setMobileOpen(false); }}><AppIcon icon={Icon} /><span>{t(labelKey)}</span>{id === "journal" && dailyCompletion < 100 ? <i /> : null}</button>;
+            return <button type="button" key={id} className={view === id ? "active" : ""} onClick={() => { setView(id); setMobileOpen(false); }}><AppIcon icon={Icon} /><span>{t(labelKey)}</span>{id === "journal" && phase === "active" && dailyCompletion < 100 ? <i /> : null}</button>;
           })}
         </nav>
         <div className="sidebar-bottom">
-          <div className="mini-goal"><div className="mini-goal-head"><span>{t("75 napos cél")}</span><strong>{Math.round(timePercent)}%</strong></div><ProgressBar value={timePercent} /><small>{currentDay}. {t("nap a 75-ből")}</small></div>
+          <div className="mini-goal"><div className="mini-goal-head"><span>{t("75 napos cél")}</span><strong>{Math.round(timePercent)}%</strong></div><ProgressBar value={timePercent} /><small>{phase === "upcoming" ? t("Még nem indult el") : phase === "completed" ? t("Kihívás teljesítve") : `${currentDay}. ${t("nap a 75-ből")}`}</small></div>
           <div className="profile-chip"><span className="avatar">75</span><span className="profile-copy"><strong>{t("Saját kihívás")}</strong><small>{t("Helyi profil")}</small></span></div>
         </div>
       </aside>
@@ -289,17 +320,17 @@ function SoftChallengeApp() {
         </header>
         <div className="content-wrap">
           {storageError ? <div className="storage-warning" role="alert">{t(storageError)}</div> : null}
-          {view === "overview" && <Overview state={state} today={activeDate} currentDay={currentDay} elapsed={elapsed} timePercent={timePercent} dailyCompletion={dailyCompletion} nextPicture={nextPicture} onUpdateLog={updateLog} onGoToDate={goToDate} onNavigate={setView} />}
-          {view === "overview" && <ProgressPictureCard settings={settings} today={today} nextPicture={nextPicture} photos={state.photos} />}
-          {view === "overview" && <CustomHabitsCard settings={settings} log={log} onUpdate={(patch) => updateLog(today, patch)} />}
-          {view === "journal" && <Journal state={state} date={selectedDate} onDateChange={setSelectedDate} onUpdateLog={updateLog} onSetRestDay={setRestDay} onMoveRestDay={moveRestDay} onBack={() => setView("overview")} />}
-          {view === "journal" && <CustomHabitsCard settings={settings} log={state.logs[selectedDate]} onUpdate={(patch) => updateLog(selectedDate, patch)} />}
+          {view === "overview" && <Overview state={state} phase={phase} today={activeDate} currentDay={currentDay} elapsed={elapsed} timePercent={timePercent} dailyCompletion={dailyCompletion} countdownDays={countdownDays} nextPicture={nextPicture} onUpdateLog={updateLog} onGoToDate={goToDate} onNavigate={setView} />}
+          {view === "overview" && phase !== "upcoming" && <ProgressPictureCard settings={settings} today={today} nextPicture={nextPicture} photos={state.photos} phase={phase} />}
+          {view === "overview" && phase !== "upcoming" && <CustomHabitsCard settings={settings} log={log} onUpdate={(patch) => updateLog(today, patch)} />}
+          {view === "journal" && (phase === "upcoming" ? <UpcomingJournal settings={settings} onNavigate={setView} /> : <Journal state={state} date={selectedDate} onDateChange={setSelectedDate} onUpdateLog={updateLog} onSetRestDay={setRestDay} onMoveRestDay={moveRestDay} onBack={() => setView("overview")} />)}
+          {view === "journal" && phase !== "upcoming" && <CustomHabitsCard settings={settings} log={state.logs[selectedDate]} onUpdate={(patch) => updateLog(selectedDate, patch)} />}
           {view === "calendar" && <CalendarView state={state} calendarDate={calendarDate} onCalendarDate={setCalendarDate} onGoToDate={goToDate} onSetRestDay={setRestDay} onMoveRestDay={moveRestDay} />}
           {view === "recipes" && <RecipesView state={state} onUpdate={updateState} />}
           {view === "planner" && <PlannerView state={state} week={plannerWeek} onWeekChange={setPlannerWeek} onUpdate={updateState} />}
           {view === "groceries" && <GroceriesView state={state} onUpdate={updateState} />}
-          {view === "progress" && <ProgressView state={state} elapsed={elapsed} />}
-          {view === "progress" && <ProgressPhotoFab onUpdate={updateState} />}
+          {view === "progress" && <ProgressView state={state} elapsed={elapsed} phase={phase} />}
+          {view === "progress" && phase !== "upcoming" && <ProgressPhotoFab onUpdate={updateState} />}
           {view === "settings" && <SettingsViewUx state={state} onUpdate={updateState} />}
           {view === "settings" && <RestartChallengeCard onRestart={restartChallenge} />}
         </div>
@@ -320,8 +351,20 @@ function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; 
   return <div className="page-heading"><div><div className="eyebrow">{t(eyebrow)}</div><h1>{t(title)}</h1>{description ? <p className="muted">{t(description)}</p> : null}</div>{action}</div>;
 }
 
-function Overview({ state, today, currentDay, elapsed, timePercent, dailyCompletion, nextPicture, onUpdateLog, onGoToDate, onNavigate }: { state: SoftState; today: string; currentDay: number; elapsed: number; timePercent: number; dailyCompletion: number; nextPicture?: string; onUpdateLog: (date: string, patch: Partial<DayLog>) => void; onGoToDate: (date: string) => void; onNavigate: (view: View) => void }) {
+function UpcomingOverview({ state, startDate, countdownDays, onNavigate }: { state: SoftState; startDate: string; countdownDays: number; onNavigate: (view: View) => void }) {
+  const { t } = useLanguage();
+  const countdown = countdownDays === 1 ? t("Holnap indul a kihívásod") : `${countdownDays} ${t("nap múlva indul a kihívásod")}`;
+  return <div className="page-enter"><PageHeader eyebrow={t("KÖVETKEZŐ KEZDÉS")} title={t("A kihívásod még nem indult el")} description={t("A napi napló a kihívás indulásakor lesz elérhető.")} /><section className="card upcoming-card"><div className="eyebrow">{t("TERVEZETT KIHÍVÁS")}</div><h2>{countdown}</h2><p className="upcoming-start-date">{t("Kezdés")}: {formatDate(startDate, { year: "numeric", month: "long", day: "numeric" })}</p><button type="button" className="primary-button" onClick={() => onNavigate("planner")}><Utensils size={18} /> {t("Heti menü megnyitása")}</button><p className="muted upcoming-plan-summary">{state.assignments.length ? `${state.assignments.length} ${t("étkezés előre megtervezve")}` : t("Tervezd meg előre az első hetedet a heti menüben.")}</p></section></div>;
+}
+
+function UpcomingJournal({ settings, onNavigate }: { settings: ChallengeSettings; onNavigate: (view: View) => void }) {
+  const { t } = useLanguage();
+  return <div className="page-enter"><PageHeader eyebrow={t("NAPI NAPLÓ")} title={t("A kihívásod még nem indult el")} description={formatDate(settings.startDate, { weekday: "long", month: "long", day: "numeric", year: "numeric" })} /><section className="card upcoming-message-card"><h3>{t("A napi napló a kihívás indulásakor lesz elérhető.")}</h3><p className="muted">{t("Addig is megtervezheted az étkezéseidet és a bevásárlólistádat.")}</p><button type="button" className="secondary-button" onClick={() => onNavigate("planner")}><Utensils size={17} /> {t("Heti menü megnyitása")}</button></section></div>;
+}
+
+function Overview({ state, phase, today, currentDay, elapsed, timePercent, dailyCompletion, countdownDays, nextPicture, onUpdateLog, onGoToDate, onNavigate }: { state: SoftState; phase: ChallengePhase; today: string; currentDay: number; elapsed: number; timePercent: number; dailyCompletion: number; countdownDays: number; nextPicture?: string; onUpdateLog: (date: string, patch: Partial<DayLog>) => void; onGoToDate: (date: string) => void; onNavigate: (view: View) => void }) {
   const { t, locale } = useLanguage();
+  if (phase === "upcoming") return <UpcomingOverview state={state} startDate={state.settings.startDate} countdownDays={countdownDays} onNavigate={onNavigate} />;
   const settings = state.settings;
   const log = defaultLog(state.logs[today]);
   const weekRestDate = restDayInWeek(today, state.logs);
@@ -408,7 +451,7 @@ function CalendarView({ state, calendarDate, onCalendarDate, onGoToDate, onSetRe
   };
   const calendarLocale = locale === "hu" ? "hu-HU" : "en-GB";
   return <div className="page-enter"><PageHeader eyebrow="NAPTÁR" title="Naptár" action={<div className="calendar-controls"><button className="secondary-button" type="button" onClick={() => onCalendarDate(new Date())}>{t("Ma")}</button><button className="icon-button" type="button" onClick={() => onCalendarDate(new Date(year, month - 1, 1))} aria-label={t("Előző hónap")}><ArrowLeft size={18} /></button><button className="icon-button" type="button" onClick={() => onCalendarDate(new Date(year, month + 1, 1))} aria-label={t("Következő hónap")}><ArrowRight size={18} /></button></div>} />
-    <div className="calendar-layout"><section className="card calendar-card"><div className="calendar-month"><h3>{new Intl.DateTimeFormat(calendarLocale, { month: "long", year: "numeric" }).format(calendarDate)}</h3><div className="calendar-legend"><span><i className="event-dot challenge" />{t("kihívás")}</span><span><i className="event-dot meal" />{t("étkezés")}</span><span><i className="event-dot photo" />{t("progress kép")}</span></div></div><div className="calendar-weekdays">{fullWeekdayNames.map((day) => <span key={day}>{locale === "hu" ? day : new Intl.DateTimeFormat(calendarLocale, { weekday: "short" }).format(new Date(2024, 0, 1 + fullWeekdayNames.indexOf(day)))}</span>)}</div><div className="calendar-grid">{cells.map((day, index) => { if (day < 1 || day > days) return <div className="calendar-cell blank" key={`blank-${index}`} />; const date = `${year}-${`${month + 1}`.padStart(2, "0")}-${`${day}`.padStart(2, "0")}`; const dayAssignments = assignmentsForDate(date); const isToday = date === localDateString(); const isPicture = progressPictureDays(state.settings).includes(date); const status = state.settings.active ? statusForDay(date, state.settings, state.logs) : "future"; const restDate = restDayInWeek(date, state.logs); const restIsAvailable = isChallengeDate(date) && (!restDate || restDate === date); return <div className={`calendar-cell ${isToday ? "today" : ""} ${state.logs[date]?.restDay ? "rest-day" : ""}`} key={date}><button type="button" className="calendar-date-button" onClick={() => onGoToDate(date)}><div className="cell-date"><strong>{day}</strong>{status === "complete" ? <CheckCircle2 size={17} /> : null}</div>{isPicture ? <span className="calendar-event photo-event"><ImagePlus size={13} /> {t("kép")}</span> : null}{dayAssignments.slice(0, 2).map((assignment) => { const batch = state.batches.find((item) => item.id === assignment.batchId); const rawRecipe = state.recipes.find((item) => item.id === batch?.recipeId); const recipe = rawRecipe ? localizeRecipe(rawRecipe, locale) : undefined; return <span key={assignment.id} className="calendar-event meal-event"><Utensils size={13} />{recipe?.name}</span>; })}</button><button type="button" className={`calendar-rest-toggle ${state.logs[date]?.restDay ? "active" : ""}`} disabled={!isChallengeDate(date)} onClick={() => toggleRestDay(date)}>{state.logs[date]?.restDay ? t("Pihenőnap") : restIsAvailable ? t("Pihenőnapnak jelölöm") : t("Pihenőnap áthelyezése ide")}</button></div>; })}</div></section><aside className="calendar-side"><div className="card agenda-card"><div className="eyebrow">{t("KÖVETKEZŐ ESEMÉNYEK")}</div><h3>{t("Ezen a héten")}</h3>{progressPictureDays(state.settings).filter((date) => date >= localDateString()).slice(0, 2).map((date) => <button type="button" className="agenda-item" key={date} onClick={() => onGoToDate(date)}><span className="agenda-date"><strong>{parseLocalDate(date).getDate()}</strong><small>{formatDate(date, { weekday: "short" })}</small></span><span><strong>{t("Progress kép")}</strong><small>{dayNumber(state.settings.startDate, date)}. {t("nap")} · {t("ütemezett")}</small></span><ImagePlus size={18} /></button>)}<button type="button" className="agenda-item" onClick={() => onGoToDate(localDateString())}><span className="agenda-date lavender-date"><CalendarDays size={19} /></span><span><strong>{t("Mai napló")}</strong><small>{t("Napi napló megnyitása")}</small></span><ArrowRight size={18} /></button></div></aside></div>
+    <div className="calendar-layout"><section className="card calendar-card"><div className="calendar-month"><h3>{new Intl.DateTimeFormat(calendarLocale, { month: "long", year: "numeric" }).format(calendarDate)}</h3><div className="calendar-legend"><span><i className="event-dot challenge" />{t("kihívás")}</span><span><i className="event-dot meal" />{t("étkezés")}</span><span><i className="event-dot photo" />{t("progress kép")}</span></div></div><div className="calendar-weekdays">{fullWeekdayNames.map((day) => <span key={day}>{locale === "hu" ? day : new Intl.DateTimeFormat(calendarLocale, { weekday: "short" }).format(new Date(2024, 0, 1 + fullWeekdayNames.indexOf(day)))}</span>)}</div><div className="calendar-grid">{cells.map((day, index) => { if (day < 1 || day > days) return <div className="calendar-cell blank" key={`blank-${index}`} />; const date = `${year}-${`${month + 1}`.padStart(2, "0")}-${`${day}`.padStart(2, "0")}`; const dayAssignments = assignmentsForDate(date); const isToday = date === localDateString(); const isBeforeStart = state.settings.active && date < state.settings.startDate; const isPicture = progressPictureDays(state.settings).includes(date); const status = state.settings.active ? statusForDay(date, state.settings, state.logs) : "future"; const restDate = restDayInWeek(date, state.logs); const restIsAvailable = isChallengeDate(date) && (!restDate || restDate === date); return <div className={`calendar-cell ${isToday ? "today" : ""} ${isBeforeStart ? "before-start" : ""} ${state.logs[date]?.restDay ? "rest-day" : ""}`} key={date}><button type="button" className="calendar-date-button" onClick={() => onGoToDate(date)}><div className="cell-date"><strong>{day}</strong>{status === "complete" ? <CheckCircle2 size={17} /> : null}</div>{isPicture ? <span className="calendar-event photo-event"><ImagePlus size={13} /> {t("kép")}</span> : null}{dayAssignments.slice(0, 2).map((assignment) => { const batch = state.batches.find((item) => item.id === assignment.batchId); const rawRecipe = state.recipes.find((item) => item.id === batch?.recipeId); const recipe = rawRecipe ? localizeRecipe(rawRecipe, locale) : undefined; return <span key={assignment.id} className="calendar-event meal-event"><Utensils size={13} />{recipe?.name}</span>; })}</button><button type="button" className={`calendar-rest-toggle ${state.logs[date]?.restDay ? "active" : ""}`} disabled={!isChallengeDate(date)} onClick={() => toggleRestDay(date)}>{state.logs[date]?.restDay ? t("Pihenőnap") : restIsAvailable ? t("Pihenőnapnak jelölöm") : t("Pihenőnap áthelyezése ide")}</button></div>; })}</div></section><aside className="calendar-side"><div className="card agenda-card"><div className="eyebrow">{t("KÖVETKEZŐ ESEMÉNYEK")}</div><h3>{t("Ezen a héten")}</h3>{progressPictureDays(state.settings).filter((date) => date >= localDateString()).slice(0, 2).map((date) => <button type="button" className="agenda-item" key={date} onClick={() => onGoToDate(date)}><span className="agenda-date"><strong>{parseLocalDate(date).getDate()}</strong><small>{formatDate(date, { weekday: "short" })}</small></span><span><strong>{t("Progress kép")}</strong><small>{dayNumber(state.settings.startDate, date)}. {t("nap")} · {t("ütemezett")}</small></span><ImagePlus size={18} /></button>)}<button type="button" className="agenda-item" onClick={() => onGoToDate(localDateString())}><span className="agenda-date lavender-date"><CalendarDays size={19} /></span><span><strong>{t("Mai napló")}</strong><small>{t("Napi napló megnyitása")}</small></span><ArrowRight size={18} /></button></div></aside></div>
   </div>;
 }
 
@@ -463,7 +506,11 @@ function PlannerView({ state, week, onWeekChange, onUpdate }: { state: SoftState
   const [editingMealPrep, setEditingMealPrep] = useState(true);
   const [plannerNotice, setPlannerNotice] = useState("");
   const weekDates = Array.from({ length: 7 }, (_, index) => addDays(week, index));
-  const batches = state.batches.filter((batch) => batch.weekStart === week);
+  const phase = challengePhase(state.settings);
+  const batches = state.batches.filter((batch) => {
+    const used = state.assignments.filter((item) => item.batchId === batch.id).reduce((sum, item) => sum + item.servings, 0);
+    return batch.weekStart === week || (batch.weekStart < week && used < batch.servings);
+  });
   const recipeCategories = ["Mindegy", ...Array.from(new Set(state.recipes.map((recipe) => recipe.category)))];
   const filteredRecipes = state.recipes.filter((recipe) => {
     const matchesCategory = recipeCategory === "Mindegy" || recipe.category === recipeCategory;
@@ -511,7 +558,11 @@ function PlannerView({ state, week, onWeekChange, onUpdate }: { state: SoftState
 
   const assign = (date: string, slot: MealSlot) => {
     if (!activeBatch) {
-      setPlannerNotice("Előbb válassz ki egy főzési adagot a heti főzési tervből.");
+      setPlannerNotice(t("Előbb válassz ki egy főzési adagot a heti főzési tervből."));
+      return;
+    }
+    if (!isMealPlanDate(state.settings, date)) {
+      setPlannerNotice(t("A kihívás kezdése előtti vagy a 75 nap utáni nap nem tervezhető."));
       return;
     }
     const batch = state.batches.find((item) => item.id === activeBatch);
@@ -565,10 +616,11 @@ function PlannerView({ state, week, onWeekChange, onUpdate }: { state: SoftState
 
   return <div className="page-enter">
     <PageHeader eyebrow="HETI MENÜ" title="Heti menü" action={<div className="week-switcher"><button type="button" onClick={() => changeWeek(addDays(week, -7))} aria-label={t("Előző hét")}><ArrowLeft size={18} /></button><strong>{formatDate(week, { month: "short", day: "numeric" })} – {formatDate(addDays(week, 6), { month: "short", day: "numeric" })}</strong><button type="button" onClick={() => changeWeek(addDays(week, 7))} aria-label={t("Következő hét")}><ArrowRight size={18} /></button></div>} />
-    {plannerNotice ? <div className="planner-notice" role="status">{t(plannerNotice)}</div> : null}
+    {phase === "upcoming" ? <div className="planner-notice" role="status">{t("A kezdés előtti napok zárolva vannak; a kezdőnaptól mind a 75 nap tervezhető.")}</div> : null}
+    {plannerNotice ? <div className="planner-notice" role="status">{plannerNotice}</div> : null}
     {selectedBatch && selectedBatchRecipe ? <div className="selected-batch-banner" data-testid="active-batch-banner"><div><span className="eyebrow">{t("KIJELÖLT FŐZÉSI ADAG")}</span><strong>{selectedBatchRecipe.name}</strong><small>{selectedBatchUsed} / {selectedBatch.servings} {t("adag felhasználva")} · {t("még")} {Math.max(0, selectedBatch.servings - selectedBatchUsed)} {t("adag")}</small></div><button type="button" className="secondary-button" onClick={() => setActiveBatch("")}>{t("Kijelölés törlése")}</button></div> : <div className="planner-hint">{t("Válassz egy főzési adagot, majd kattints a naptárban a reggeli, ebéd vagy vacsora mezőjére.")}</div>}
     <div className="planner-layout">
-      <section className="card meal-board"><div className="card-heading"><div><div className="eyebrow">{t("HETI ÉTKEZÉSI TERV")}</div><h3>{t("Reggeli · ebéd · vacsora")}</h3></div><span className="muted small">{state.assignments.filter((item) => item.date >= week && item.date <= addDays(week, 6)).length} {t("étkezés tervezve")}</span></div><div className="meal-board-grid"><div className="meal-board-labels"><span /><strong>{t("Reggeli")}</strong><strong>{t("Ebéd")}</strong><strong>{t("Vacsora")}</strong></div>{weekDates.map((date) => <div className="planner-day" key={date}><div className="planner-day-head"><strong>{formatDate(date, { weekday: "short" })}</strong><span>{parseLocalDate(date).getDate()}</span></div>{(["reggeli", "ebed", "vacsora"] as MealSlot[]).map((slot) => { const assignment = state.assignments.find((item) => item.date === date && item.slot === slot); const batch = assignment ? state.batches.find((item) => item.id === assignment.batchId) : undefined; const recipe = batch ? state.recipes.map((item) => localizeRecipe(item, locale)).find((item) => item.id === batch.recipeId) : undefined; return <button type="button" key={slot} data-testid={`planner-slot-${date}-${slot}`} aria-label={`${formatDate(date, { weekday: "long", month: "long", day: "numeric" })} ${slotLabels[slot]}`} className={`planner-slot ${assignment ? "filled" : ""} ${activeBatch ? "ready" : ""}`} title={assignment ? `${recipe?.name ?? t("Étkezések")} · ${t("Kattints a cseréhez vagy eltávolításhoz")}` : `${slotLabels[slot]} ${t("hozzáadása")}`} onClick={() => assignment && activeBatch && assignment.batchId !== activeBatch ? assign(date, slot) : assignment ? removeAssignment(assignment.id) : assign(date, slot)}>{recipe ? <><span className="slot-dot" /><span>{recipe.name}</span><X size={15} /></> : <Plus size={19} />}</button>; })}</div>)}</div></section>
+        <section className="card meal-board"><div className="card-heading"><div><div className="eyebrow">{t("HETI ÉTKEZÉSI TERV")}</div><h3>{t("Reggeli · ebéd · vacsora")}</h3></div><span className="muted small">{state.assignments.filter((item) => item.date >= week && item.date <= addDays(week, 6)).length} {t("étkezés tervezve")}</span></div><div className="meal-board-grid"><div className="meal-board-labels"><span /><strong>{t("Reggeli")}</strong><strong>{t("Ebéd")}</strong><strong>{t("Vacsora")}</strong></div>{weekDates.map((date) => <div className={`planner-day ${!isMealPlanDate(state.settings, date) ? "before-start" : ""}`} key={date}><div className="planner-day-head"><strong>{formatDate(date, { weekday: "short" })}</strong><span>{parseLocalDate(date).getDate()}</span></div>{(["reggeli", "ebed", "vacsora"] as MealSlot[]).map((slot) => { const assignment = state.assignments.find((item) => item.date === date && item.slot === slot); const batch = assignment ? state.batches.find((item) => item.id === assignment.batchId) : undefined; const recipe = batch ? state.recipes.map((item) => localizeRecipe(item, locale)).find((item) => item.id === batch.recipeId) : undefined; const planAllowed = isMealPlanDate(state.settings, date); return <button type="button" key={slot} data-testid={`planner-slot-${date}-${slot}`} aria-label={`${formatDate(date, { weekday: "long", month: "long", day: "numeric" })} ${slotLabels[slot]}`} aria-disabled={!planAllowed && !assignment} disabled={!planAllowed && !assignment} className={`planner-slot ${assignment ? "filled" : ""} ${activeBatch ? "ready" : ""} ${!planAllowed ? "disabled" : ""}`} title={assignment ? `${recipe?.name ?? t("Étkezések")} · ${t("Kattints a cseréhez vagy eltávolításhoz")}` : planAllowed ? `${slotLabels[slot]} ${t("hozzáadása")}` : t("A kihívás kezdése előtt nem tervezhető.")} onClick={() => assignment && activeBatch && assignment.batchId !== activeBatch ? assign(date, slot) : assignment ? removeAssignment(assignment.id) : assign(date, slot)}>{recipe ? <><span className="slot-dot" /><span>{recipe.name}</span><X size={15} /></> : <Plus size={19} />}</button>; })}</div>)}</div></section>
       <aside className="planner-side"><div className="card batch-card"><div className="card-heading"><div><div className="eyebrow">{t("HETI FŐZÉSI TERV")}</div><h3>{t("Főzési adagok")}</h3></div><button className="icon-button" type="button" data-testid="open-recipe-picker" aria-label={t("Recept hozzáadása")} onClick={openPicker}><Plus size={19} /></button></div>{batches.length ? batches.map((batch) => { const recipe = state.recipes.map((item) => localizeRecipe(item, locale)).find((item) => item.id === batch.recipeId); const used = state.assignments.filter((item) => item.batchId === batch.id).reduce((sum, item) => sum + item.servings, 0); return <div key={batch.id}><div className={`batch-row ${activeBatch === batch.id ? "active" : ""}`}><button type="button" className="batch-select" data-testid={`batch-select-${batch.id}`} onClick={() => setActiveBatch(batch.id)}><span className="batch-thumb"><Utensils size={19} /></span><span><strong>{recipe?.name}</strong><small>{used} / {batch.servings} {t("adag felhasználva")}{batch.mealPrep ? ` · ${t("Főzési adag")}` : ` · ${t("egy étkezés")}`}</small><ProgressBar value={(used / Math.max(1, batch.servings)) * 100} /></span></button><button type="button" className="batch-action" aria-label={`${recipe?.name ?? t("Főzési adag")} ${t("Szerkesztés")}`} onClick={() => startBatchEdit(batch)}><Edit3 size={18} /></button><button type="button" className="batch-action danger" aria-label={`${recipe?.name ?? t("Főzési adag")} ${t("Törlés")}`} onClick={() => deleteBatch(batch)}><Trash2 size={18} /></button></div>{editingBatchId === batch.id ? <div className="batch-edit-form"><Field label="Adagok"><input data-testid="batch-edit-servings" type="number" min={Math.max(1, used)} step="1" value={editingServings} onChange={(event) => setEditingServings(event.target.value)} /></Field><label className="toggle-row"><input type="checkbox" checked={editingMealPrep} onChange={(event) => setEditingMealPrep(event.target.checked)} /><span className="toggle" /><span><strong>{t("Főzési adag")}</strong><small>{t("Több étkezéshez készül.")}</small></span></label><div className="batch-edit-actions"><button type="button" className="secondary-button" onClick={() => setEditingBatchId("")}>{t("Mégsem")}</button><button type="button" className="primary-button" onClick={saveBatchEdit}>{t("Mentés")}</button></div></div> : null}</div>; }) : <div className="empty-state"><Utensils size={28} /><strong>{t("Még nincs főzési terved")}</strong><p>{t("A plusz gombbal válassz receptet és állítsd be az adagokat.")}</p></div>}
         {pickerOpen ? <div className="recipe-picker-panel"><div className="recipe-picker-head"><div><div className="eyebrow">{t("RECEPT HOZZÁADÁSA")}</div><h3>{t("Válassz a receptjeid közül")}</h3></div><button type="button" className="icon-button" aria-label={t("Receptválasztó bezárása")} onClick={() => setPickerOpen(false)}><X size={19} /></button></div><div className="search-field recipe-picker-search"><Search size={18} /><input data-testid="recipe-picker-search" value={recipeQuery} onChange={(event) => setRecipeQuery(event.target.value)} placeholder={t("Keress receptnév alapján…")} /></div><div className="filter-pills recipe-picker-filters">{recipeCategories.map((category) => <button type="button" key={category} className={recipeCategory === category ? "active" : ""} onClick={() => setRecipeCategory(category)}>{translateCategory(category, locale)}</button>)}</div><div className="picker-scroll recipe-picker-results">{filteredRecipes.length ? filteredRecipes.map((rawRecipe) => { const recipe = localizeRecipe(rawRecipe, locale); return <button type="button" key={recipe.id} data-testid={`recipe-picker-option-${recipe.id}`} className={`recipe-picker-option ${selectedRecipeId === recipe.id ? "selected" : ""}`} onClick={() => selectRecipe(rawRecipe)}><span className="batch-thumb"><Utensils size={19} /></span><span><strong>{recipe.name}</strong><small>{translateCategory(recipe.category, locale)} · {recipe.servings} {t("alap adag")}</small></span>{selectedRecipeId === recipe.id ? <Check size={19} /> : <Plus size={18} />}</button>; }) : <div className="empty-state"><Search size={26} /><strong>{t("Nincs találat")}</strong><p>{t("Próbálj másik nevet vagy kategóriát.")}</p></div>}</div>{selectedRecipe ? <div className="batch-create-form"><div><strong>{localizeRecipe(selectedRecipe, locale).name}</strong><small>{translateCategory(localizeRecipe(selectedRecipe, locale).category, locale)}</small></div><Field label="Elkészítendő adagok"><input data-testid="batch-servings-input" type="number" min="1" step="1" value={servingsDraft} onChange={(event) => setServingsDraft(event.target.value)} /></Field><label className="toggle-row"><input type="checkbox" checked={mealPrepDraft} onChange={(event) => setMealPrepDraft(event.target.checked)} /><span className="toggle" /><span><strong>{t("Főzési adag")}</strong><small>{t("Több étkezéshez is felhasználható.")}</small></span></label><button type="button" data-testid="batch-add-button" className="primary-button wide" onClick={addBatch}>{t("Főzési adag hozzáadása")} <Plus size={18} /></button></div> : <p className="picker-help">{t("Kattints egy receptre az adagok beállításához.")}</p>}</div> : <div className="recipe-picker-closed"><p className="muted small">{t("A plusz gomb megnyitja az összes receptet, saját receptekkel együtt.")}</p></div>}
       </div></aside>
@@ -590,8 +642,9 @@ function GroceriesView({ state, onUpdate }: { state: SoftState; onUpdate: (updat
   return <div className="page-enter"><PageHeader eyebrow="BEVÁSÁRLÓLISTA" title="Bevásárlólista" action={<div className="list-actions"><button className="secondary-button" type="button" onClick={() => navigator.clipboard?.writeText(groceries.map((item) => `${displayName(item)} – ${number.format(item.quantity)} ${item.unit === "db" && locale === "en" ? "pcs" : item.unit}`).join("\n"))}><ClipboardCheck size={18} /> {t("Másolás")}</button><button className="primary-button" type="button" onClick={() => window.print()}><ShoppingBasket size={18} /> {t("Nyomtatás")}</button></div>} /><div className="grocery-summary"><div><span>{t("Összes tétel")}</span><strong>{groceries.length}</strong></div><div><span>{t("Még szükséges")}</span><strong>{remaining}</strong></div><div><span>{t("Beszerzési kategória")}</span><strong>{Object.keys(grouped).length}</strong></div><div className="grocery-summary-art"><ShoppingBasket size={28} /></div></div><div className="grocery-layout"><section className="card grocery-card"><div className="card-heading"><div><div className="eyebrow">{t("TERVEZETT HOZZÁVALÓK")}</div><h3>{t("Hozzávalók kategóriánként")}</h3></div><span className="completion-pill">{groceries.length - remaining} / {groceries.length} {t("kész")}</span></div>{Object.keys(grouped).length ? Object.entries(grouped).map(([category, items]) => <div className="grocery-group" key={category}><h4>{category}</h4>{items.map((item) => { const status = state.groceryStatus[item.key] ?? {}; return <div className={`grocery-row ${status.purchased || status.pantry ? "done" : ""}`} key={item.key}><button type="button" className={`grocery-check ${status.purchased ? "checked" : ""}`} onClick={() => toggle(item.key, "purchased")} aria-label={t("Megjelölés beszerzettként")}>{status.purchased ? <Check size={14} /> : null}</button><span><strong>{displayName(item)}</strong><small>{status.pantry ? t("Otthon van") : status.purchased ? t("Beszerezve") : t("Még szükséges")}</small></span><strong className="grocery-qty">{number.format(item.quantity)} {item.unit}</strong><button type="button" className={`pantry-button ${status.pantry ? "active" : ""}`} onClick={() => toggle(item.key, "pantry")}>{status.pantry ? t("otthon van") : t("van otthon?")}</button></div>; })}</div>) : <div className="empty-state large"><ShoppingBasket size={30} /><strong>{t("A listád még üres")}</strong><p>{t("Adj hozzá egy főzési adagot a Heti menüben.")}</p></div>}</section><aside className="card manual-grocery"><div className="eyebrow">{t("SAJÁT TÉTEL")}</div><h3>{t("Egyéb tétel")}</h3><form onSubmit={addItem}><input value={newItem} onChange={(event) => setNewItem(event.target.value)} placeholder={t("pl. mosogatógép tabletta")} /><div><input type="number" min="1" value={newQty} onChange={(event) => setNewQty(event.target.value)} /><span>{locale === "hu" ? "db" : "pcs"}</span><button type="submit" aria-label={t("Hozzáadás")}><Plus size={18} /></button></div></form><p className="muted small">{t("A kézzel hozzáadott tételek is megmaradnak a következő alkalomra.")}</p></aside></div></div>;
 }
 
-function ProgressView({ state, elapsed }: { state: SoftState; elapsed: number }) {
+function ProgressView({ state, elapsed, phase }: { state: SoftState; elapsed: number; phase: ChallengePhase }) {
   const { t } = useLanguage();
+  if (phase === "upcoming") return <div className="page-enter"><PageHeader eyebrow={t("HALADÁS")} title={t("A kihívásod még nem indult el")} description={t("A haladásod itt jelenik meg, amikor a napi követés elindul.")} /><section className="card upcoming-message-card"><h3>{t("A kihívás még nem kezdődött el.")}</h3><p className="muted">{t("A tervezett étkezéseid ettől függetlenül megmaradnak és frissülnek.")}</p></section></div>;
   const logs = Object.values(state.logs);
   const completed = logs.filter((log) => completionForDay(log, state.settings) === 100).length;
   const partial = logs.filter((log) => { const value = completionForDay(log, state.settings); return value > 0 && value < 100; }).length;

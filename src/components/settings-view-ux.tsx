@@ -2,7 +2,7 @@
 
 import { CalendarDays, Check, CheckCircle2, Edit3, ImagePlus, Plus, Trash2 } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
-import { challengeEndDate, formatDate, makeId, type ChallengeSettings, type CustomHabit, type SoftState } from "@/lib/soft-challenge";
+import { challengeEndDate, formatDate, isMealPlanDate, makeId, mealAssignmentsOutsideChallenge, type ChallengeSettings, type CustomHabit, type SoftState } from "@/lib/soft-challenge";
 import { parseSoftState, serializeSoftState } from "@/lib/soft-state-io";
 import { useLanguage } from "./language-provider";
 
@@ -29,7 +29,12 @@ export default function SettingsViewUx({ state, onUpdate }: { state: SoftState; 
   useEffect(() => setDraft({ ...settings, customHabits: settings.customHabits ?? [] }), [settings]);
 
   const save = () => {
-    onUpdate((current) => ({ ...current, settings: draft }));
+    const movedOutsideRange = draft.startDate !== settings.startDate && mealAssignmentsOutsideChallenge(draft, state.assignments).length;
+    if (movedOutsideRange && !window.confirm(`${movedOutsideRange} ${t("étkezési terv a kihívás új időszakán kívülre kerül. Törlöd ezeket az étkezéseket?")}`)) {
+      setNotice(t("A kezdődátum nem változott."));
+      return;
+    }
+    onUpdate((current) => ({ ...current, settings: draft, assignments: movedOutsideRange ? current.assignments.filter((assignment) => isMealPlanDate(draft, assignment.date)) : current.assignments }));
     setNotice("A beállításaid mentve.");
     window.setTimeout(() => setNotice(""), 2500);
   };
