@@ -124,15 +124,15 @@ function AppIcon({ icon: Icon, size = 18 }: { icon: typeof Activity; size?: numb
   return <Icon size={size} strokeWidth={1.8} />;
 }
 
-function MobileBottomNav({ view, onNavigate, onOpenMenu }: { view: View; onNavigate: (view: View) => void; onOpenMenu: () => void }) {
+function MobileBottomNav({ view, menuOpen, onNavigate, onOpenMenu }: { view: View; menuOpen: boolean; onNavigate: (view: View) => void; onOpenMenu: () => void }) {
   const { t } = useLanguage();
   const primaryItems = navItems.filter((item) => ["overview", "journal", "planner", "groceries"].includes(item.id));
-  return <nav className="mobile-bottom-nav" aria-label={t("Mobil navigáció")}>
+  return <nav className="mobile-bottom-nav" aria-label={t("Mobil navigáció")} aria-hidden={menuOpen}>
     {primaryItems.map(({ id, labelKey, icon }) => {
       const Icon = icon;
       return <button type="button" key={id} className={view === id ? "active" : ""} aria-current={view === id ? "page" : undefined} onClick={() => onNavigate(id)}><AppIcon icon={Icon} size={22} /><span>{t(labelKey)}</span>{id === "journal" ? <i aria-hidden="true" /> : null}</button>;
     })}
-    <button type="button" className="mobile-bottom-menu" onClick={onOpenMenu} aria-label={t("További menüpontok")}><MoreHorizontal size={22} /><span>{t("Továbbiak")}</span></button>
+    <button type="button" className="mobile-bottom-menu" onClick={onOpenMenu} aria-controls="mobile-sidebar" aria-expanded={menuOpen} aria-label={t("További menüpontok")}><MoreHorizontal size={22} /><span>{t("Továbbiak")}</span></button>
   </nav>;
 }
 
@@ -166,7 +166,65 @@ function SoftChallengeApp() {
   const [entryResolved, setEntryResolved] = useState(false);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const saveRevision = useRef(0);
+  const mobileMenuRef = useRef<HTMLButtonElement>(null);
+  const mobileSidebarRef = useRef<HTMLElement>(null);
+  const mobileFocusReturnRef = useRef<HTMLElement | null>(null);
+  const mobileWasOpenRef = useRef(false);
   const cloudSync = useCloudSync({ state, setState, ready: loaded, locale, localePreferenceRevision, onLocaleChange: changeLocale });
+
+  const openMobileMenu = () => {
+    if (mobileOpen) return;
+    mobileFocusReturnRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : mobileMenuRef.current;
+    setMobileOpen(true);
+  };
+
+  const closeMobileMenu = () => setMobileOpen(false);
+
+  useEffect(() => {
+    if (!mobileOpen) {
+      if (mobileWasOpenRef.current) {
+        mobileWasOpenRef.current = false;
+        mobileFocusReturnRef.current?.focus();
+        mobileFocusReturnRef.current = null;
+      }
+      return;
+    }
+
+    mobileWasOpenRef.current = true;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousDocumentOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    const focusableSelector = "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex=\"-1\"])";
+    const focusableElements = () => [...(mobileSidebarRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? [])];
+    const firstFocusable = focusableElements()[0];
+    firstFocusable?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const elements = focusableElements();
+      if (!elements.length) return;
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousDocumentOverflow;
+    };
+  }, [mobileOpen]);
 
   useEffect(() => {
     if (!loaded || !cloudSync.authReady) return;
@@ -399,8 +457,8 @@ function SoftChallengeApp() {
   if (!settings.active) return <OnboardingForm settings={settings} onStart={startChallenge} />;
 
   return (
-    <div className="soft-app-shell" data-locale={locale}>
-      <aside className={`app-sidebar ${mobileOpen ? "open" : ""}`}>
+    <div className={`soft-app-shell ${mobileOpen ? "menu-open" : ""}`} data-locale={locale}>
+      <aside id="mobile-sidebar" ref={mobileSidebarRef} className={`app-sidebar ${mobileOpen ? "open" : ""}`} aria-label={t("MENÜ")}>
           <div className="brand-lockup">
           <div className="brand-mark"><Leaf size={20} /></div>
           <div><strong>75 soft</strong><span>{t("wellness planner")}</span></div>
@@ -417,10 +475,10 @@ function SoftChallengeApp() {
           <div className="profile-chip"><span className="avatar">75</span><span className="profile-copy"><strong>{t("Saját kihívás")}</strong><small>{t("Helyi profil")}</small></span></div>
         </div>
       </aside>
-      {mobileOpen ? <button aria-label={t("Menü bezárása")} className="mobile-scrim" type="button" onClick={() => setMobileOpen(false)} /> : null}
-      <main className="app-main">
+      {mobileOpen ? <button aria-label={t("Menü bezárása")} className="mobile-scrim" type="button" onClick={closeMobileMenu} /> : null}
+      <main className="app-main" aria-hidden={mobileOpen}>
         <header className="topbar">
-          <button type="button" className="mobile-menu" onClick={() => setMobileOpen(true)} aria-label={t("Menü megnyitása")}><Menu size={20} /></button>
+          <button ref={mobileMenuRef} type="button" className="mobile-menu" onClick={openMobileMenu} aria-controls="mobile-sidebar" aria-expanded={mobileOpen} aria-label={t("Menü megnyitása")}><Menu size={20} /></button>
           <div className="breadcrumb"><span>75 soft</span><strong>{t(navItems.find((item) => item.id === view)?.labelKey ?? "")}</strong></div>
           <div className="topbar-actions"><LanguageSwitcher /><span className="save-status"><span className="save-dot" /> {t(saveState)}</span><AccountControl sync={cloudSync} /></div>
         </header>
@@ -442,7 +500,7 @@ function SoftChallengeApp() {
           <LegalLinks className="app-legal-links" />
         </div>
       </main>
-      <MobileBottomNav view={view} onNavigate={(nextView) => { setView(nextView); setMobileOpen(false); }} onOpenMenu={() => setMobileOpen(true)} />
+      <MobileBottomNav view={view} menuOpen={mobileOpen} onNavigate={(nextView) => { setView(nextView); closeMobileMenu(); }} onOpenMenu={openMobileMenu} />
       <MigrationDialog sync={cloudSync} />
     </div>
   );
