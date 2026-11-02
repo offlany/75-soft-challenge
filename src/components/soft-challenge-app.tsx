@@ -81,6 +81,8 @@ import { formatCount, translate, translateCategory } from "@/lib/i18n";
 import { builtInRecipeIds, localizeIngredientCategory, localizeIngredientName, localizeRecipe } from "@/lib/recipe-localization";
 import { RecipeEditor } from "./recipe-editor";
 import { GroceriesView as GroceriesViewScoped } from "./groceries-view";
+import { AccountControl, MigrationDialog } from "./account-sync";
+import { useCloudSync } from "@/lib/use-cloud-sync";
 
 type View = "overview" | "calendar" | "journal" | "recipes" | "planner" | "groceries" | "progress" | "settings";
 
@@ -140,7 +142,7 @@ function RestartChallengeCard({ onRestart }: { onRestart: () => void }) {
 }
 
 function SoftChallengeApp() {
-  const { locale, t } = useLanguage();
+  const { locale, t, changeLocale } = useLanguage();
   const [state, setState] = useState<SoftState>(() => createInitialState());
   const [view, setView] = useState<View>("overview");
   const [selectedDate, setSelectedDate] = useState(localDateString());
@@ -154,6 +156,7 @@ function SoftChallengeApp() {
   const [canPersist, setCanPersist] = useState(isStaticMode);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const saveRevision = useRef(0);
+  const cloudSync = useCloudSync({ state, setState, ready: loaded, locale, onLocaleChange: changeLocale });
 
   useEffect(() => {
     let cancelled = false;
@@ -357,7 +360,7 @@ function SoftChallengeApp() {
         <header className="topbar">
           <button type="button" className="mobile-menu" onClick={() => setMobileOpen(true)} aria-label={t("Menü megnyitása")}><Menu size={20} /></button>
           <div className="breadcrumb"><span>75 soft</span><ChevronDown size={14} /><strong>{t(navItems.find((item) => item.id === view)?.labelKey ?? "")}</strong></div>
-          <div className="topbar-actions"><LanguageSwitcher /><span className="save-status"><span className="save-dot" /> {t(saveState)}</span></div>
+          <div className="topbar-actions"><LanguageSwitcher /><span className="save-status"><span className="save-dot" /> {t(saveState)}</span><AccountControl sync={cloudSync} /></div>
         </header>
         <div className="content-wrap">
           {storageError ? <div className="storage-warning" role="alert">{t(storageError)}</div> : null}
@@ -372,11 +375,12 @@ function SoftChallengeApp() {
           {view === "groceries" && <GroceriesViewScoped state={state} onUpdate={updateState} />}
           {view === "progress" && <ProgressView state={state} elapsed={elapsed} phase={phase} onDeletePhoto={(photoId) => updateState((current) => ({ ...current, photos: current.photos.filter((photo) => photo.id !== photoId) }))} />}
           {view === "progress" && phase !== "upcoming" && <ProgressPhotoFab settings={settings} onUpdate={updateState} />}
-          {view === "settings" && <SettingsViewUx state={state} onUpdate={updateState} />}
+          {view === "settings" && <SettingsViewUx state={state} onUpdate={updateState} account={cloudSync} />}
           {view === "settings" && <RestartChallengeCard onRestart={restartChallenge} />}
         </div>
       </main>
       <MobileBottomNav view={view} onNavigate={(nextView) => { setView(nextView); setMobileOpen(false); }} onOpenMenu={() => setMobileOpen(true)} />
+      <MigrationDialog sync={cloudSync} />
     </div>
   );
 }
