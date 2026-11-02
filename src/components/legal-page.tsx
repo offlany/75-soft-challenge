@@ -1,0 +1,59 @@
+"use client";
+
+import Link from "next/link";
+import { ArrowLeft, Leaf } from "lucide-react";
+import LanguageSwitcher from "./language-switcher";
+import { LegalLinks } from "./legal-links";
+import { useLanguage } from "./language-provider";
+
+type LegalKind = "privacy" | "terms";
+
+const privacyContent = {
+  hu: {
+    label: "JOGI TERVEZET",
+    title: "Adatkezelési tájékoztató",
+    intro: "Ez a tájékoztató a 75 Soft Challenge jelenlegi technikai működését írja le. Nem minősül végleges jogi megfelelőségi nyilatkozatnak; a közzététel előtt jogi felülvizsgálat és a hiányzó szolgáltatói adatok megerősítése szükséges.",
+    sections: [
+      ["Adatkezelő", "A szolgáltatást jelenleg magánszemélyként, személyes projektként üzemelteti a 75 Soft Challenge tulajdonosa/fejlesztője. Jogi név: [A TULAJDONOS MEGERŐSÍTÉSÉRE VÁR]. Kapcsolat: borzabori@gmail.com. Nem állítunk bejegyzett gazdasági társaságot, nyilvántartási vagy adószámot, és nem jelölünk ki adatvédelmi tisztviselőt."],
+      ["Milyen adatokat kezelünk?", "A kihívás beállításait, szokásokat, napi naplókat, vízfogyasztást, olvasást, mozgást, pihenőnapokat, öngondoskodási és alkoholfogyasztási adatokat, személyes jegyzeteket, recepteket, étkezési terveket, bevásárlólistákat, valamint a progress képek dátumát és megjegyzését. A feltöltött progress-képek képfájljai böngészőben maradnak, nem kerülnek Firestore-ba."],
+      ["Hol tárolódnak az adatok?", "Bejelentkezés nélkül az adatok az aktuális böngészőprofil IndexedDB tárhelyében, szükség esetén localStorage tartalékban maradnak. Bejelentkezve a kihívás strukturált adatai a Google Firebase Authentication azonosítójához kapcsolt Cloud Firestore rekordokba szinkronizálódnak. A Firestore offline gyorsítótára a támogatott böngészőkben helyi másolatot tarthat meg. A Firebase/Google adatközponti régióját, szolgáltatói feltételeit és nemzetközi adattovábbítási mechanizmusát a tulajdonosnak a Firebase projekt élesítése előtt ellenőriznie kell."],
+      ["Célok és jogalapok", "A cél a személyes szokáskövetés, étkezéstervezés, biztonsági mentés és a felhasználó által kért eszközök közötti szinkronizálás. A végleges jogalapokat – különösen a potenciálisan egészségre vagy életmódra vonatkozó adatok GDPR 9. cikke szerinti feltételét – jogi felülvizsgálattal kell meghatározni. Ez a tervezet nem állítja, hogy az általános használat vagy a Google-bejelentkezés önmagában megfelelő explicit hozzájárulás minden különleges adatkategóriához."],
+      ["Megőrzés", "A böngészős adatok addig maradnak a böngészőben, amíg a felhasználó ki nem törli őket, vagy az alkalmazás helyi adat törlését nem választja. A cloud adatok a fiókhoz kapcsolódóan maradnak, amíg a felhasználó nem törli őket, vagy az üzemeltető a Firebase projektben más megőrzési szabályt nem állít be. Végleges, jogilag ellenőrzött megőrzési idő jelenleg nincs meghatározva."],
+      ["Felhasználói jogok és törlés", "A Beállításokban JSON-export készíthető, a helyi böngészős adat törölhető, a Google-kapcsolat megszüntethető, valamint a hitelesített felhasználó kérheti a szinkronizált rekordok és a Firebase-fiók törlését. A fióktörléshez a Google friss újbóli hitelesítést kérhet. A törlés csak a jelenleg támogatott Firestore-gyűjteményekre terjed ki; külső Firebase-bővítmények vagy más szolgáltatói naplók törlésére ez az alkalmazás nem vállal garanciát."],
+      ["Szolgáltatók és technológiák", "Google Authentication és Firebase Cloud Firestore használható a bejelentkezéshez és szinkronizáláshoz. Nincs szándékosan hozzáadott hirdetési, analitikai vagy követési technológia. A böngészőben szükséges tárhelyet, IndexedDB-t, localStorage-ot és Firestore offline cache-t a szolgáltatás működéséhez használjuk; külön cookie-hozzájárulási ablakot nem vezetünk be olyan technológiára, amelyet nem használunk."],
+      ["Automatizált döntéshozatal és panasz", "A szolgáltatás nem végez automatizált döntéshozatalt vagy profilalkotást. Panasz esetén először a fenti e-mail címen lehet kapcsolatot kérni. Magyarországon az illetékes felügyeleti hatóságként a Nemzeti Adatvédelmi és Információszabadság Hatóság (NAIH) jöhet szóba; az aktuális elérhetőséget a közzététel előtt ellenőrizni kell."],
+      ["Nyitott jogi kérdések", "A jogi név, az adatkezelő hivatalos címe, a végleges jogalapok és GDPR 9. cikk szerinti feltételek, a Firebase régiója és adattovábbítása, a megőrzési idők, valamint az esetleges különleges adatokhoz szükséges hozzájárulási folyamat még tulajdonosi és jogi döntést igényel." ]
+    ]
+  },
+  en: {
+    label: "LEGAL DRAFT",
+    title: "Privacy Notice",
+    intro: "This notice describes the current technical behavior of 75 Soft Challenge. It is not a final legal-compliance statement; legal review and confirmation of missing service-provider details are required before publication.",
+    sections: [
+      ["Data controller", "The service is currently operated as a personal project by the individual owner/developer of 75 Soft Challenge. Legal name: [TO BE CONFIRMED BY THE OWNER]. Contact: borzabori@gmail.com. No company, registration number, tax number, or data protection officer is being invented or implied here."],
+      ["Data we process", "Challenge settings, habits, daily logs, water consumption, reading, exercise, rest days, self-care and alcohol-tracking entries, personal notes, recipes, meal plans, grocery lists, and progress-picture dates and notes. Uploaded progress-picture image files stay in the browser and are not sent to Firestore."],
+      ["Where data is stored", "Without sign-in, data stays in the current browser profile's IndexedDB, with localStorage as a fallback when needed. With sign-in, structured challenge data is synchronized to Cloud Firestore under the user's Google Firebase Authentication identity. Supported browsers may keep a local Firestore offline cache. The owner must verify the Firebase/Google data-center region, provider terms, and international-transfer mechanism before production launch."],
+      ["Purposes and legal basis", "The purposes are personal habit tracking, meal planning, user-requested backup, and synchronization across the user's devices. The final legal bases—including the GDPR Article 9 condition for potentially health- or lifestyle-related data—require legal review. This draft does not claim that general use or Google sign-in alone is a valid explicit consent for every special-category processing activity."],
+      ["Retention", "Browser data remains until the user clears it or uses the local-data deletion control. Cloud data remains associated with the account until the user deletes it or a different retention policy is configured in the Firebase project. A final legally reviewed retention period has not yet been defined."],
+      ["User rights and deletion", "Settings provides JSON export, browser-local deletion, sign-out, and deletion of synchronized records and the Firebase account for an authenticated user. Account deletion may require recent Google reauthentication. Deletion covers the Firestore collections currently supported by this app; the app does not guarantee deletion of external Firebase extensions or provider logs."],
+      ["Providers and technologies", "Google Authentication and Firebase Cloud Firestore may be used for sign-in and synchronization. No advertising, analytics, or tracking technology has been intentionally added. Browser storage, IndexedDB, localStorage, and the Firestore offline cache are used for service functionality; no cookie-consent dialog is introduced for technologies the app does not use."],
+      ["Automated decisions and complaints", "The service does not perform automated decision-making or profiling. Contact the controller first at the email above. Users should contact the supervisory authority applicable to their place of residence; for Hungary, the National Authority for Data Protection and Freedom of Information (NAIH) may be relevant, subject to verification before publication."],
+      ["Open legal questions", "The legal name, official controller address, final legal bases and Article 9 conditions, Firebase region and transfer safeguards, retention periods, and any separate consent mechanism for special-category data still require owner and legal review." ]
+    ]
+  }
+} as const;
+
+const termsContent = {
+  hu: {
+    label: "JOGI TERVEZET", title: "Felhasználási feltételek", intro: "Ez egy rövid, felülvizsgálatra váró tervezet a 75 Soft Challenge személyes használatához.", sections: [["A szolgáltatás célja", "A 75 Soft Challenge személyes szokáskövetést, napi naplózást, recept- és étkezéstervezést, valamint bevásárlólista-kezelést biztosító alkalmazás."], ["Vendég és Google mód", "Vendég módban az adatok a böngészőprofilban maradnak. Google módban a strukturált kihívásadatok Firebase-en keresztül szinkronizálódhatnak. A progress-képek fájljai eszközhelyiek maradnak."], ["Felhasználói felelősség", "A felhasználó felelős a beírt adatokért, a biztonsági mentésekért és a Google-fiókja védelméért. Érdemes rendszeresen JSON-mentést készíteni."], ["Nem orvosi tanács", "Az alkalmazás nem egészségügyi szolgáltatás, nem ad orvosi, pszichológiai vagy táplálkozási diagnózist és nem helyettesít szakembert."], ["Fiók és elérhetőség", "A kijelentkezés nem törli a cloud adatokat. A cloud-adat és a Firebase-fiók törlése külön megerősítést igényelhet. A szolgáltatás, a böngésző-tárhely és a Firebase elérhetősége nem garantált; hibák, kvóták és karbantartás előfordulhatnak."], ["Jogi felülvizsgálat", "A végleges adatkezelési és szerződéses feltételek, az adatkezelő azonosítása és az esetleges különleges adatok kezelése közzététel előtt jogi felülvizsgálatra vár."]]
+  },
+  en: {
+    label: "LEGAL DRAFT", title: "Terms of Use", intro: "This is a short draft for review before publication and personal use of 75 Soft Challenge.", sections: [["Purpose", "75 Soft Challenge provides personal habit tracking, daily journaling, recipe and meal planning, and grocery-list functionality."], ["Guest and Google modes", "Guest mode keeps data in the browser profile. Google mode may synchronize structured challenge data through Firebase. Progress-picture files remain device-local."], ["User responsibilities", "Users are responsible for their entries, backups, and Google-account security. Regular JSON exports are recommended."], ["No medical advice", "The app is not a healthcare service and does not provide medical, psychological, or nutritional diagnosis or replace professional advice."], ["Account and availability", "Signing out does not delete cloud data. Deleting cloud data and the Firebase account requires separate confirmation and may require reauthentication. Availability of the app, browser storage, and Firebase is not guaranteed; errors, quotas, and maintenance may occur."], ["Legal review", "Final privacy and contractual terms, controller identification, and any special-category data processing require legal review before publication."]]
+  }
+} as const;
+
+export default function LegalPage({ kind }: { kind: LegalKind }) {
+  const { locale, t } = useLanguage();
+  const content = kind === "privacy" ? privacyContent[locale] : termsContent[locale];
+  return <main className="legal-page"><header className="legal-header"><Link className="legal-back" href="/"><ArrowLeft size={17} /> {t("Vissza a kezdőlapra")}</Link><LanguageSwitcher /></header><article className="legal-card"><div className="legal-brand"><span className="brand-mark"><Leaf size={20} /></span><strong>75 soft</strong></div><div className="eyebrow">{content.label}</div><h1>{content.title}</h1><p className="legal-intro">{content.intro}</p><div className="legal-sections">{content.sections.map(([heading, text]) => <section key={heading}><h2>{heading}</h2><p>{text}</p></section>)}</div><LegalLinks className="legal-footer-links" /></article></main>;
+}

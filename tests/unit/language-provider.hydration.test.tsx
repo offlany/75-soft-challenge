@@ -43,7 +43,7 @@ describe("LanguageProvider SSR hydration", () => {
     expect(container.querySelector("[data-locale]")?.textContent).toBe("Betöltés…");
     expect(container.querySelector("[data-locale]")?.getAttribute("data-locale")).toBe("hu");
     expect(errors.filter((error) => error.includes("Hydration failed"))).toEqual([]);
-    root.unmount();
+    await act(async () => { root.unmount(); });
   });
 
   it("applies the saved English preference only after hydration", async () => {
@@ -54,7 +54,7 @@ describe("LanguageProvider SSR hydration", () => {
     expect(container.querySelector("[data-locale]")?.getAttribute("data-locale")).toBe("en");
     expect(document.documentElement.lang).toBe("en");
     expect(errors.filter((error) => error.includes("Hydration failed"))).toEqual([]);
-    root.unmount();
+    await act(async () => { root.unmount(); });
   });
 
   it("uses the browser language for a fresh English session after hydration", async () => {
@@ -63,13 +63,13 @@ describe("LanguageProvider SSR hydration", () => {
 
     expect(container.querySelector("[data-locale]")?.getAttribute("data-locale")).toBe("en");
     expect(container.querySelector("[data-locale]")?.textContent).toBe("Loading…");
-    root.unmount();
+    await act(async () => { root.unmount(); });
   });
 
   it("hydrates the real app shell without reporting a mismatch", async () => {
     const { root, errors } = await hydrateServerMarkup(<HomePage />);
 
     expect(errors.filter((error) => error.includes("Hydration failed"))).toEqual([]);
-    root.unmount();
+    await act(async () => { root.unmount(); });
   });
 });

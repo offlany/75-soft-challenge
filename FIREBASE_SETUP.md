@@ -36,7 +36,7 @@ npx firebase use YOUR_FIREBASE_PROJECT_ID
 npx firebase deploy --only firestore:rules,firestore:indexes
 ```
 
-The rules scope every document to `users/{uid}/...` and require `request.auth.uid == uid`. Clients cannot delete documents; the app writes tombstones so offline deletions cannot reappear after reconnecting. Review the rules before deploying any project-specific extension.
+The rules scope every document to `users/{uid}/...` and require `request.auth.uid == uid`. An authenticated owner can delete documents in their own path, which supports the explicit cloud-data and account-deletion controls. Normal record edits still use tombstones so offline deletions cannot reappear after reconnecting. Review the rules before deploying any project-specific extension.
 
 ## 4. GitHub Pages
 
@@ -56,6 +56,8 @@ The Pages workflow passes them only to the static build. If they are absent, the
 When a signed-in account has no cloud data but the browser has a meaningful challenge, the app asks before uploading it and offers a JSON backup download. If both local and cloud data exist and differ, the app offers cloud, local upload, or a safe ID-based merge. A failed migration leaves the local state untouched.
 
 Sign-out returns the browser to the pre-login guest state, so one account's cloud data is not left visible to the next guest or account. Firestore's web offline cache is enabled when supported; it improves offline resilience but should only be used on a trusted device because cached cloud data can remain in the browser. See Firebase's [web offline persistence guidance](https://firebase.google.com/docs/firestore/manage-data/enable-offline).
+
+The account controls distinguish sign-out, deletion of the app's known Firestore records, and deletion of the Firebase Authentication account. Cloud and account deletion require confirmation; account deletion invokes recent Google reauthentication. The deletion scope covers the collections listed below, not external Firebase extensions, provider logs, or copies outside this app.
 
 ## 6. Emulator tests
 

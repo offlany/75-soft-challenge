@@ -76,6 +76,15 @@ async function writeIndexedDb(indexedDb: IDBFactory, serializedState: string): P
   });
 }
 
+function deleteIndexedDb(indexedDb: IDBFactory): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDb.deleteDatabase(DATABASE_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error ?? new Error("IndexedDB state could not be deleted."));
+    request.onblocked = () => reject(new Error("IndexedDB state deletion was blocked."));
+  });
+}
+
 function indexedDbAvailable(): IDBFactory | undefined {
   return typeof window !== "undefined" ? window.indexedDB : undefined;
 }
@@ -122,4 +131,19 @@ export function saveBrowserState(state: SoftState): Promise<BrowserPersistenceBa
   const nextSave = browserSaveQueue.then(() => saveBrowserStateNow(serializedState));
   browserSaveQueue = nextSave.then(() => undefined, () => undefined);
   return nextSave;
+}
+
+export async function clearBrowserState(): Promise<void> {
+  await browserSaveQueue.catch(() => undefined);
+  const indexedDb = indexedDbAvailable();
+  if (indexedDb) {
+    try {
+      await deleteIndexedDb(indexedDb);
+    } catch {
+    }
+  }
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+  }
 }

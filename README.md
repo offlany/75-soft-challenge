@@ -85,6 +85,25 @@ npm run build:pages
 
 This command temporarily excludes the local SQLite API route while Next.js creates the export, then restores the route before exiting. The exported application starts with a clean onboarding screen and stores each visitor's setup and progress in browser storage. The local source remains available for `npm run dev` and `npm run build`. The exported application is configured for the repository subpath `/75-soft-challenge/`, supports trailing-slash direct loading, and uses browser persistence.
 
+### Safe browser-only Pages smoke test
+
+To test the static behavior without touching the local SQLite database or a real Firebase project, build from a clean copy that contains no `.env.local` secrets:
+
+```bash
+TEST_DIR=$(mktemp -d /private/tmp/75-soft-pages-test.XXXXXX)
+git archive --format=tar HEAD | tar -x -C "$TEST_DIR"
+cd "$TEST_DIR"
+cp .env.example .env.local
+npm ci
+npm run build:pages
+SERVER_DIR=$(mktemp -d /private/tmp/75-soft-pages-server.XXXXXX)
+mkdir -p "$SERVER_DIR/75-soft-challenge"
+cp -R out/. "$SERVER_DIR/75-soft-challenge/"
+python3 -m http.server 4173 --directory "$SERVER_DIR"
+```
+
+Open `http://127.0.0.1:4173/75-soft-challenge/` in two separate private browser profiles or separate browser instances. Complete guest onboarding in both; their IndexedDB and localStorage are independent. Do not add production Firebase values to this copy and do not use Google sign-in in this smoke test. Test cloud synchronization only against a dedicated Firebase emulator/project with test accounts and disposable data.
+
 ### Language and recipe data
 
 The HU/EN switcher is available in the top bar and on onboarding. Built-in recipes keep their stable IDs and Hungarian source data; English names, categories, ingredients, descriptions, and instructions are applied as a display layer. Custom recipes and user-entered text are never overwritten by a language change. Dates and numbers use the active locale while quantities remain metric.

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from "@firebase/rules-unit-testing";
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { deleteDoc, doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 
 let testEnv: RulesTestEnvironment;
 
@@ -56,11 +56,12 @@ rulesDescribe("Firestore user-scoped rules", () => {
     await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(), "users", "owner-a", "meta", "settings")));
   });
 
-  it("rejects hard deletes so offline tombstones remain authoritative", async () => {
+  it("allows an owner to delete own records but rejects cross-user deletes", async () => {
     const ownerDb = testEnv.authenticatedContext("owner-a").firestore();
+    const otherDb = testEnv.authenticatedContext("owner-b").firestore();
     const reference = doc(ownerDb, "users", "owner-a", "meta", "settings");
     await assertSucceeds(setDoc(reference, validEnvelope));
-    const { deleteDoc } = await import("firebase/firestore");
-    await assertFails(deleteDoc(reference));
+    await assertFails(deleteDoc(doc(otherDb, "users", "owner-a", "meta", "settings")));
+    await assertSucceeds(deleteDoc(reference));
   });
 });

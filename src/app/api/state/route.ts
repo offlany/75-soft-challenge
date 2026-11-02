@@ -45,3 +45,8 @@ export async function PUT(request: Request) {
   database.prepare("INSERT INTO app_state (id, payload, updated_at) VALUES (1, ?, datetime('now')) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at").run(payload);
   return jsonResponse({ ok: true });
 }
+
+export async function DELETE() {
+  database.prepare("DELETE FROM app_state WHERE id = 1").run();
+  return jsonResponse({ ok: true });
+}

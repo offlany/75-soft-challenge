@@ -230,6 +230,19 @@ export async function writeCloudRecords(db: Firestore, uid: string, nextRecords:
   }
 }
 
+export async function deleteCloudRecords(db: Firestore, uid: string): Promise<void> {
+  const references: ReturnType<typeof doc>[] = [];
+  for (const collectionName of CLOUD_COLLECTIONS) {
+    const snapshot = await getDocs(query(firestoreCollection(db, "users", uid, collectionName)));
+    snapshot.docs.forEach((snapshotDoc) => references.push(doc(db, "users", uid, collectionName, snapshotDoc.id)));
+  }
+  for (let index = 0; index < references.length; index += 450) {
+    const batch = writeBatch(db);
+    references.slice(index, index + 450).forEach((reference) => batch.delete(reference));
+    await batch.commit();
+  }
+}
+
 function mergeById<T extends { id: string }>(local: T[], cloud: T[]): T[] {
   const result = new Map(local.map((item) => [item.id, item]));
   cloud.forEach((item) => { if (!result.has(item.id)) result.set(item.id, item); });

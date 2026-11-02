@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { User } from "firebase/auth";
-import { authErrorKey, signInWithGoogle, signOutFromGoogle, subscribeToAuth, type AuthErrorKey } from "./firebase-auth";
+import { authErrorKey, deleteCurrentGoogleAccount, signInWithGoogle, signOutFromGoogle, subscribeToAuth, type AuthErrorKey } from "./firebase-auth";
 import { getFirebaseServices, isFirebaseConfigured } from "./firebase-config";
-import { cloudLocale, createCloudRecords, hasLiveCloudRecords, hasMeaningfulLocalState, loadCloudSnapshot, mergeSoftStates, subscribeToCloud, softStatesEqual, stableSerialize, writeCloudRecords, type CloudRecordMap } from "./cloud-sync";
+import { cloudLocale, createCloudRecords, deleteCloudRecords, hasLiveCloudRecords, hasMeaningfulLocalState, loadCloudSnapshot, mergeSoftStates, subscribeToCloud, softStatesEqual, stableSerialize, writeCloudRecords, type CloudRecordMap } from "./cloud-sync";
 import { serializeSoftState } from "./soft-state-io";
 import type { AppLocale, SoftState } from "./soft-challenge";
 
@@ -20,12 +20,17 @@ export type MigrationState = {
 
 export type CloudSyncController = {
   configured: boolean;
+  authReady: boolean;
+  isActive: boolean;
+  isRestoring: boolean;
   user: { uid: string; displayName: string | null; email: string | null; photoURL: string | null } | null;
   status: CloudSyncStatus;
-  errorKey: "" | AuthErrorKey | "A felhős adat-egyeztetés nem sikerült. Az eredeti helyi adatok változatlanok maradtak." | "A felhős adatok nem olvashatók, ezért nem töltöttem felül a helyi adatokat." | "A felhős szinkronizálás megszakadt. Ellenőrizd a kapcsolatot, majd próbáld újra." | "A felhős adatkapcsolat nincs készen.",
+  errorKey: "" | AuthErrorKey | "A felhős adat-egyeztetés nem sikerült. Az eredeti helyi adatok változatlanok maradtak." | "A felhős adatok nem olvashatók, ezért nem töltöttem felül a helyi adatokat." | "A felhős szinkronizálás megszakadt. Ellenőrizd a kapcsolatot, majd próbáld újra." | "A felhős adatkapcsolat nincs készen." | "Cloud adatok törlése nem sikerült." | "A Google-fiók törlése nem sikerült.",
   migration: MigrationState | null;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
+  deleteCloudData: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   resolveMigration: (choice: MigrationChoice) => Promise<void>;
   downloadBackup: () => void;
   retry: () => void;
@@ -59,13 +64,13 @@ function publicUser(user: User | null): CloudSyncController["user"] {
 export function useCloudSync({ state, setState, ready, locale, onLocaleChange }: CloudSyncProps): CloudSyncController {
   const configured = isFirebaseConfigured();
   const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(!configured);
   const [status, setStatus] = useState<CloudSyncStatus>(configured ? "guest" : "unavailable");
   const [errorKey, setErrorKey] = useState<CloudSyncController["errorKey"]>("");
   const [migration, setMigration] = useState<MigrationState | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
   const stateRef = useRef(state);
   const guestStateRef = useRef(state);
-  const userRef = useRef<User | null>(null);
   const activeUidRef = useRef("");
   const activeRef = useRef(false);
   const recordsRef = useRef<CloudRecordMap>(new Map());
@@ -74,12 +79,14 @@ export function useCloudSync({ state, setState, ready, locale, onLocaleChange }:
   const clientIdRef = useRef("");
 
   stateRef.current = state;
-  userRef.current = user;
 
   useEffect(() => {
     if (!configured) return;
     clientIdRef.current = clientId();
-    const unsubscribe = subscribeToAuth(setUser);
+    const unsubscribe = subscribeToAuth((nextUser) => {
+      setUser(nextUser);
+      setAuthReady(true);
+    });
     return unsubscribe;
   }, [configured]);
 
@@ -220,6 +227,36 @@ export function useCloudSync({ state, setState, ready, locale, onLocaleChange }:
     await signOutFromGoogle();
   }, []);
 
+  const deleteCloudData = useCallback(async () => {
+    const services = getFirebaseServices();
+    if (!services || !user) return;
+    setStatus("syncing");
+    setErrorKey("");
+    stopCloud();
+    try {
+      await deleteCloudRecords(services.db, user.uid);
+      await signOutFromGoogle();
+    } catch {
+      setErrorKey("Cloud adatok törlése nem sikerült.");
+      setStatus("error");
+    }
+  }, [stopCloud, user]);
+
+  const deleteAccount = useCallback(async () => {
+    const services = getFirebaseServices();
+    if (!services || !user) return;
+    setStatus("syncing");
+    setErrorKey("");
+    stopCloud();
+    try {
+      await deleteCloudRecords(services.db, user.uid);
+      await deleteCurrentGoogleAccount();
+    } catch (error) {
+      setErrorKey(error instanceof Error && (error.message === "firebase-user-not-found" || error.message.includes("auth/")) ? authErrorKey(error) : "A Google-fiók törlése nem sikerült.");
+      setStatus("error");
+    }
+  }, [stopCloud, user]);
+
   const resolveMigration = useCallback(async (choice: MigrationChoice) => {
     if (!migration || !user) return;
     const services = getFirebaseServices();
@@ -248,12 +285,17 @@ export function useCloudSync({ state, setState, ready, locale, onLocaleChange }:
 
   return {
     configured,
+    authReady,
+    isActive: activeRef.current,
+    isRestoring: configured && (!authReady || Boolean(user && !activeRef.current && !migration && status === "syncing")),
     user: publicUser(user),
     status,
     errorKey,
     migration,
     signIn,
     signOut,
+    deleteCloudData,
+    deleteAccount,
     resolveMigration,
     downloadBackup,
     retry: () => setRetryNonce((value) => value + 1),

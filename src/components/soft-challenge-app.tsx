@@ -69,7 +69,7 @@ import {
   type Recipe,
   type SoftState
 } from "@/lib/soft-challenge";
-import { loadBrowserState, saveBrowserState } from "@/lib/browser-persistence";
+import { clearBrowserState, loadBrowserState, saveBrowserState } from "@/lib/browser-persistence";
 import { parseSoftState } from "@/lib/soft-state-io";
 import OnboardingForm from "./onboarding-form";
 import SettingsViewUx from "./settings-view-ux";
@@ -83,6 +83,9 @@ import { RecipeEditor } from "./recipe-editor";
 import { GroceriesView as GroceriesViewScoped } from "./groceries-view";
 import { AccountControl, MigrationDialog } from "./account-sync";
 import { useCloudSync } from "@/lib/use-cloud-sync";
+import WelcomeScreen from "./welcome-screen";
+import { LegalLinks } from "./legal-links";
+import { hasMeaningfulLocalState } from "@/lib/cloud-sync";
 
 type View = "overview" | "calendar" | "journal" | "recipes" | "planner" | "groceries" | "progress" | "settings";
 
@@ -107,9 +110,15 @@ const habitLabels: Record<HabitId, { title: string; detail: string; icon: typeof
 const weekdayNames = ["H", "K", "Sze", "Cs", "P", "Szo", "V"];
 const fullWeekdayNames = ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", "Szombat", "Vasárnap"];
 const isStaticMode = process.env.NEXT_PUBLIC_STATIC_MODE === "true";
+const ENTRY_MODE_KEY = "75-soft-entry-mode";
 
 function defaultLog(log?: DayLog): DayLog {
   return log ?? { alcohol: "unknown" };
+}
+
+function LoadingGate({ sync }: { sync?: ReturnType<typeof useCloudSync> }) {
+  const { t } = useLanguage();
+  return <div className="app-loading"><div className="brand-mark"><Leaf size={22} /></div><p>{t(sync?.status === "error" ? "A felhős adatok betöltése nem sikerült." : "Betöltés…")}</p>{sync?.status === "error" ? <button type="button" className="secondary-button" onClick={sync.retry}>{t("Újrapróbálás")}</button> : null}<LegalLinks className="loading-legal" />{sync ? <MigrationDialog sync={sync} /> : null}</div>;
 }
 
 function AppIcon({ icon: Icon, size = 18 }: { icon: typeof Activity; size?: number }) {
@@ -154,9 +163,35 @@ function SoftChallengeApp() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [clockTick, setClockTick] = useState(0);
   const [canPersist, setCanPersist] = useState(isStaticMode);
+  const [entryMode, setEntryMode] = useState<"pending" | "welcome" | "guest" | "authenticated">("pending");
+  const [entryResolved, setEntryResolved] = useState(false);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const saveRevision = useRef(0);
   const cloudSync = useCloudSync({ state, setState, ready: loaded, locale, onLocaleChange: changeLocale });
+
+  useEffect(() => {
+    if (!loaded || !cloudSync.authReady) return;
+    if (cloudSync.user) {
+      setEntryMode("authenticated");
+      setEntryResolved(true);
+      return;
+    }
+    if (entryResolved) {
+      if (entryMode === "authenticated") {
+        window.localStorage.setItem(ENTRY_MODE_KEY, "guest");
+        setEntryMode("guest");
+      }
+      return;
+    }
+    const savedMode = window.localStorage.getItem(ENTRY_MODE_KEY);
+    const shouldSkipWelcome = savedMode === "guest" || hasMeaningfulLocalState(state);
+    setEntryMode(shouldSkipWelcome ? "guest" : "welcome");
+    setEntryResolved(true);
+  }, [cloudSync.authReady, cloudSync.user, entryMode, entryResolved, loaded, state]);
+
+  useEffect(() => {
+    if (cloudSync.user && cloudSync.isActive) window.localStorage.setItem(ENTRY_MODE_KEY, "google");
+  }, [cloudSync.isActive, cloudSync.user]);
 
   useEffect(() => {
     let cancelled = false;
@@ -327,13 +362,41 @@ function SoftChallengeApp() {
     setView("overview");
   };
 
+  const continueAsGuest = () => {
+    window.localStorage.setItem(ENTRY_MODE_KEY, "guest");
+    setEntryMode("guest");
+    setEntryResolved(true);
+  };
+
+  const deleteLocalData = async () => {
+    if (!window.confirm(t("Törlöd a böngészőben mentett adatokat? Ez nem törli a Google-fiókod cloud adatait."))) return;
+    try {
+      if (cloudSync.user) await cloudSync.signOut();
+      if (!isStaticMode) {
+        const response = await fetch("/api/state", { method: "DELETE" });
+        if (!response.ok) throw new Error("The local state could not be deleted.");
+      }
+      await clearBrowserState();
+      setCanPersist(false);
+      setState(createInitialState());
+      window.localStorage.removeItem(ENTRY_MODE_KEY);
+      setEntryMode("welcome");
+      setEntryResolved(true);
+      setView("overview");
+    } catch {
+      setStorageError("A helyi adatok törlése nem sikerült.");
+    }
+  };
+
   const goToDate = (date: string) => {
     setSelectedDate(date);
     setView("journal");
     setMobileOpen(false);
   };
 
-  if (!loaded) return <div className="app-loading"><div className="brand-mark"><Leaf size={22} /></div><p>{t("Betöltés…")}</p></div>;
+  if (!loaded || !entryResolved || (cloudSync.user && cloudSync.isRestoring)) return <LoadingGate sync={cloudSync} />;
+  if (entryMode === "welcome") return <WelcomeScreen sync={cloudSync} onGuest={continueAsGuest} />;
+  if (cloudSync.user && !cloudSync.isActive) return <LoadingGate sync={cloudSync} />;
   if (!settings.active) return <OnboardingForm settings={settings} onStart={startChallenge} />;
 
   return (
@@ -375,8 +438,9 @@ function SoftChallengeApp() {
           {view === "groceries" && <GroceriesViewScoped state={state} onUpdate={updateState} />}
           {view === "progress" && <ProgressView state={state} elapsed={elapsed} phase={phase} onDeletePhoto={(photoId) => updateState((current) => ({ ...current, photos: current.photos.filter((photo) => photo.id !== photoId) }))} />}
           {view === "progress" && phase !== "upcoming" && <ProgressPhotoFab settings={settings} onUpdate={updateState} />}
-          {view === "settings" && <SettingsViewUx state={state} onUpdate={updateState} account={cloudSync} />}
+          {view === "settings" && <SettingsViewUx state={state} onUpdate={updateState} account={cloudSync} onDeleteLocalData={deleteLocalData} />}
           {view === "settings" && <RestartChallengeCard onRestart={restartChallenge} />}
+          <LegalLinks className="app-legal-links" />
         </div>
       </main>
       <MobileBottomNav view={view} onNavigate={(nextView) => { setView(nextView); setMobileOpen(false); }} onOpenMenu={() => setMobileOpen(true)} />

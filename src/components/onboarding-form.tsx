@@ -5,6 +5,7 @@ import { FormEvent, useState } from "react";
 import { makeId, type ChallengeSettings, type CustomHabit, type HabitId } from "@/lib/soft-challenge";
 import LanguageSwitcher from "./language-switcher";
 import { useLanguage } from "./language-provider";
+import { LegalLinks } from "./legal-links";
 
 const habitLabels: Record<HabitId, { title: string; detail: string; icon: typeof Activity }> = {
   movement: { title: "Mozgás", detail: "30 perc mozgás", icon: Activity },
@@ -59,6 +60,7 @@ export default function OnboardingForm({ settings, onStart }: { settings: Challe
         <p>{t("Állítsd be a szokásaidat, és kövesd a haladásodat egy helyen.")}</p>
       </div>
       <div className="onboarding-art-foot"><span><CheckCircle2 size={17} /> {t("Saját beállítások")}</span><span><CheckCircle2 size={17} /> {t("Helyi mentés")}</span></div>
+        <LegalLinks className="onboarding-legal" />
     </div>
     <div className="onboarding-panel">
       <div className="onboarding-panel-head">

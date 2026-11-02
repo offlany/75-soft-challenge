@@ -31,7 +31,7 @@ service cloud.firestore {
     match /users/{userId}/{collectionName}/{recordId} {
       allow read: if signedInAs(userId);
       allow create, update: if signedInAs(userId) && validEnvelope(userId, recordId);
-      allow delete: if false;
+      allow delete: if signedInAs(userId);
     }
   }
 }
