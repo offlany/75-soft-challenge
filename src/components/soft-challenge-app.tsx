@@ -9,7 +9,6 @@ import {
   CalendarDays,
   Check,
   CheckCircle2,
-  ChevronDown,
   ClipboardCheck,
   Clock3,
   Droplets,
@@ -151,7 +150,7 @@ function RestartChallengeCard({ onRestart }: { onRestart: () => void }) {
 }
 
 function SoftChallengeApp() {
-  const { locale, t, changeLocale } = useLanguage();
+  const { locale, localePreferenceRevision, t, changeLocale } = useLanguage();
   const [state, setState] = useState<SoftState>(() => createInitialState());
   const [view, setView] = useState<View>("overview");
   const [selectedDate, setSelectedDate] = useState(localDateString());
@@ -167,7 +166,7 @@ function SoftChallengeApp() {
   const [entryResolved, setEntryResolved] = useState(false);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const saveRevision = useRef(0);
-  const cloudSync = useCloudSync({ state, setState, ready: loaded, locale, onLocaleChange: changeLocale });
+  const cloudSync = useCloudSync({ state, setState, ready: loaded, locale, localePreferenceRevision, onLocaleChange: changeLocale });
 
   useEffect(() => {
     if (!loaded || !cloudSync.authReady) return;
@@ -422,7 +421,7 @@ function SoftChallengeApp() {
       <main className="app-main">
         <header className="topbar">
           <button type="button" className="mobile-menu" onClick={() => setMobileOpen(true)} aria-label={t("Menü megnyitása")}><Menu size={20} /></button>
-          <div className="breadcrumb"><span>75 soft</span><ChevronDown size={14} /><strong>{t(navItems.find((item) => item.id === view)?.labelKey ?? "")}</strong></div>
+          <div className="breadcrumb"><span>75 soft</span><strong>{t(navItems.find((item) => item.id === view)?.labelKey ?? "")}</strong></div>
           <div className="topbar-actions"><LanguageSwitcher /><span className="save-status"><span className="save-dot" /> {t(saveState)}</span><AccountControl sync={cloudSync} /></div>
         </header>
         <div className="content-wrap">

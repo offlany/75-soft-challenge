@@ -680,8 +680,12 @@ export function setLocale(locale: Locale): void {
 
 export function readPreferredLocale(): Locale | null {
   if (typeof window === "undefined") return null;
-  const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
-  return stored === "hu" || stored === "en" ? stored : null;
+  try {
+    const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    return stored === "hu" || stored === "en" ? stored : null;
+  } catch {
+    return null;
+  }
 }
 
 export function detectBrowserLocale(): Locale {
@@ -690,7 +694,10 @@ export function detectBrowserLocale(): Locale {
 }
 
 export function savePreferredLocale(locale: Locale): void {
-  if (typeof window !== "undefined") window.localStorage.setItem(LANGUAGE_STORAGE_KEY, locale);
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, locale);
+  } catch {}
 }
 
 export function translate(value: string, locale = activeLocale): string {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createInitialState } from "@/lib/soft-challenge";
-import { createCloudRecords, hasMeaningfulLocalState, mergeSoftStates, recordsToState, recordKey, stableSerialize } from "@/lib/cloud-sync";
+import { createCloudPreferenceRecord, createCloudRecords, hasMeaningfulLocalState, mergeSoftStates, recordsToState, recordKey, resolveLocalePreference, stableSerialize } from "@/lib/cloud-sync";
 
 describe("cloud sync state mapping", () => {
   it("maps granular state records and keeps progress photo binaries local", () => {
@@ -52,5 +52,18 @@ describe("cloud sync state mapping", () => {
     clean.settings.active = true;
     expect(hasMeaningfulLocalState(clean)).toBe(true);
     expect(stableSerialize(clean)).toBe(stableSerialize(clean));
+  });
+
+  it("keeps an explicit browser locale ahead of a stale cloud preference", () => {
+    expect(resolveLocalePreference("hu", "en", "hu")).toBe("en");
+    expect(resolveLocalePreference("hu", null, "en")).toBe("en");
+    expect(resolveLocalePreference("hu", null, null)).toBe("hu");
+  });
+
+  it("creates a standalone locale preference record", () => {
+    const record = createCloudPreferenceRecord("uid-a", "client-a", "en");
+    expect(record.collection).toBe("meta");
+    expect(record.id).toBe("preferences");
+    expect(record.envelope.payload).toEqual({ locale: "en" });
   });
 });

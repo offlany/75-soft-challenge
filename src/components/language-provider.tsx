@@ -1,10 +1,11 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { detectBrowserLocale, readPreferredLocale, savePreferredLocale, setLocale, translate, type Locale } from "@/lib/i18n";
 
 type LanguageContextValue = {
   locale: Locale;
+  localePreferenceRevision: number;
   changeLocale: (locale: Locale) => void;
   t: (value: string) => string;
 };
@@ -13,6 +14,7 @@ const LanguageContext = createContext<LanguageContextValue | null>(null);
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [locale, setCurrentLocale] = useState<Locale>("hu");
+  const [localePreferenceRevision, setLocalePreferenceRevision] = useState(0);
 
   useEffect(() => {
     const preferred = readPreferredLocale() ?? detectBrowserLocale();
@@ -24,13 +26,14 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = locale;
   }, [locale]);
 
-  const changeLocale = (nextLocale: Locale) => {
+  const changeLocale = useCallback((nextLocale: Locale) => {
     setLocale(nextLocale);
     savePreferredLocale(nextLocale);
-    setCurrentLocale(nextLocale);
-  };
+    setLocalePreferenceRevision((revision) => revision + 1);
+    setCurrentLocale((current) => current === nextLocale ? current : nextLocale);
+  }, []);
 
-  const value = useMemo(() => ({ locale, changeLocale, t: (value: string) => translate(value, locale) }), [locale]);
+  const value = useMemo(() => ({ locale, localePreferenceRevision, changeLocale, t: (value: string) => translate(value, locale) }), [changeLocale, locale, localePreferenceRevision]);
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
 }
 

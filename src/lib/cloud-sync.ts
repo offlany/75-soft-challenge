@@ -133,6 +133,15 @@ export function cloudLocale(records: CloudRecordMap): AppLocale | null {
   return value === "hu" || value === "en" ? value : null;
 }
 
+export function resolveLocalePreference(currentLocale: AppLocale, storedLocale: AppLocale | null, cloudPreference: AppLocale | null): AppLocale {
+  return storedLocale ?? cloudPreference ?? currentLocale;
+}
+
+export function createCloudPreferenceRecord(uid: string, clientId: string, locale: AppLocale, previous?: CloudRecord, now = Date.now()): CloudRecord {
+  const id = encodeId("preferences");
+  return { collection: "meta", id, envelope: envelopeFor(uid, clientId, id, { locale }, previous, now) };
+}
+
 export function recordsToState(records: CloudRecordMap, fallbackState?: SoftState): SoftState | null {
   const settingsRecord = records.get(recordKey("meta", encodeId("settings")));
   if (!settingsRecord || settingsRecord.envelope.deleted) return null;

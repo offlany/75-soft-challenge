@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 import type { User } from "firebase/auth";
 import { authErrorKey, deleteCurrentGoogleAccount, signInWithGoogle, signOutFromGoogle, subscribeToAuth, type AuthErrorKey } from "./firebase-auth";
 import { getFirebaseServices, isFirebaseConfigured } from "./firebase-config";
-import { cloudLocale, createCloudRecords, deleteCloudRecords, hasLiveCloudRecords, hasMeaningfulLocalState, loadCloudSnapshot, mergeSoftStates, subscribeToCloud, softStatesEqual, stableSerialize, writeCloudRecords, type CloudRecordMap } from "./cloud-sync";
+import { cloudLocale, createCloudPreferenceRecord, createCloudRecords, deleteCloudRecords, hasLiveCloudRecords, hasMeaningfulLocalState, loadCloudSnapshot, mergeSoftStates, recordKey, resolveLocalePreference, subscribeToCloud, softStatesEqual, stableSerialize, writeCloudRecords, type CloudRecordMap } from "./cloud-sync";
+import { readPreferredLocale } from "./i18n";
 import { serializeSoftState } from "./soft-state-io";
 import type { AppLocale, SoftState } from "./soft-challenge";
 
@@ -42,6 +43,7 @@ type CloudSyncProps = {
   setState: Dispatch<SetStateAction<SoftState>>;
   ready: boolean;
   locale: AppLocale;
+  localePreferenceRevision: number;
   onLocaleChange?: (locale: AppLocale) => void;
 };
 
@@ -61,7 +63,7 @@ function publicUser(user: User | null): CloudSyncController["user"] {
   return { uid: user.uid, displayName: user.displayName, email: user.email, photoURL: user.photoURL };
 }
 
-export function useCloudSync({ state, setState, ready, locale, onLocaleChange }: CloudSyncProps): CloudSyncController {
+export function useCloudSync({ state, setState, ready, locale, localePreferenceRevision, onLocaleChange }: CloudSyncProps): CloudSyncController {
   const configured = isFirebaseConfigured();
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(!configured);
@@ -77,8 +79,15 @@ export function useCloudSync({ state, setState, ready, locale, onLocaleChange }:
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const lastFingerprintRef = useRef("");
   const clientIdRef = useRef("");
+  const localeRef = useRef(locale);
+  const localePreferenceRevisionRef = useRef(localePreferenceRevision);
+  const onLocaleChangeRef = useRef(onLocaleChange);
+  const preferenceWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   stateRef.current = state;
+  localeRef.current = locale;
+  localePreferenceRevisionRef.current = localePreferenceRevision;
+  onLocaleChangeRef.current = onLocaleChange;
 
   useEffect(() => {
     if (!configured) return;
@@ -103,8 +112,11 @@ export function useCloudSync({ state, setState, ready, locale, onLocaleChange }:
     lastFingerprintRef.current = "";
   }, []);
 
-  const activateCloud = useCallback(async (nextState: SoftState, uid: string, db: NonNullable<ReturnType<typeof getFirebaseServices>>["db"], baseline: CloudRecordMap, upload: boolean, preferredLocale: AppLocale | null = null) => {
-    const nextRecords = createCloudRecords(nextState, uid, clientIdRef.current, baseline, Date.now(), { locale });
+  const activateCloud = useCallback(async (nextState: SoftState, uid: string, db: NonNullable<ReturnType<typeof getFirebaseServices>>["db"], baseline: CloudRecordMap, upload: boolean, preferredLocale: AppLocale | null = null, localeRevisionAtStart = localePreferenceRevisionRef.current) => {
+    const storedLocale = readPreferredLocale();
+    const explicitLocaleChanged = localePreferenceRevisionRef.current !== localeRevisionAtStart;
+    const effectiveLocale = explicitLocaleChanged ? localeRef.current : resolveLocalePreference(localeRef.current, storedLocale, preferredLocale);
+    const nextRecords = createCloudRecords(nextState, uid, clientIdRef.current, baseline, Date.now(), { locale: effectiveLocale });
     recordsRef.current = nextRecords;
     activeRef.current = true;
     activeUidRef.current = uid;
@@ -113,7 +125,7 @@ export function useCloudSync({ state, setState, ready, locale, onLocaleChange }:
     setErrorKey("");
     setStatus("syncing");
     if (upload) await writeCloudRecords(db, uid, nextRecords, baseline);
-    if (preferredLocale && preferredLocale !== locale) onLocaleChange?.(preferredLocale);
+    if (preferredLocale && !storedLocale && localePreferenceRevisionRef.current === localeRevisionAtStart) onLocaleChangeRef.current?.(preferredLocale);
     setMigration(null);
     unsubscribeRef.current?.();
     unsubscribeRef.current = subscribeToCloud(db, uid, (snapshot) => {
@@ -129,7 +141,7 @@ export function useCloudSync({ state, setState, ready, locale, onLocaleChange }:
       setStatus("error");
     }, nextState);
     setStatus(typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "synced");
-  }, [locale, onLocaleChange, setState]);
+  }, [setState]);
 
   useEffect(() => {
     if (!ready || !configured) return;
@@ -153,6 +165,7 @@ export function useCloudSync({ state, setState, ready, locale, onLocaleChange }:
       setStatus("syncing");
       setErrorKey("" as CloudSyncController["errorKey"]);
       try {
+        const localeRevisionAtStart = localePreferenceRevisionRef.current;
         const snapshot = await loadCloudSnapshot(services.db, user.uid, stateRef.current);
         if (cancelled) return;
         const localState = stateRef.current;
@@ -173,7 +186,7 @@ export function useCloudSync({ state, setState, ready, locale, onLocaleChange }:
           setStatus("syncing");
           return;
         }
-        await activateCloud(cloudExists && snapshot.state ? snapshot.state : localState, user.uid, services.db, snapshot.records, !cloudExists, cloudExists ? cloudLocale(snapshot.records) : null);
+        await activateCloud(cloudExists && snapshot.state ? snapshot.state : localState, user.uid, services.db, snapshot.records, !cloudExists, cloudExists ? cloudLocale(snapshot.records) : null, localeRevisionAtStart);
       } catch {
         if (cancelled) return;
         setErrorKey("A felhős adat-egyeztetés nem sikerült. Az eredeti helyi adatok változatlanok maradtak.");
@@ -183,6 +196,35 @@ export function useCloudSync({ state, setState, ready, locale, onLocaleChange }:
     void prepare();
     return () => { cancelled = true; };
   }, [activateCloud, configured, ready, retryNonce, setState, stopCloud, user]);
+
+  useEffect(() => {
+    if (!ready || !configured || !user || !activeRef.current) return;
+    const storedLocale = readPreferredLocale();
+    if (storedLocale !== locale) return;
+    const services = getFirebaseServices();
+    if (!services) return;
+
+    const preferenceKey = recordKey("meta", "preferences");
+    const previousRecords = recordsRef.current;
+    const previousPreference = previousRecords.get(preferenceKey);
+    if (previousPreference && !previousPreference.envelope.deleted && previousPreference.envelope.payload.locale === locale) return;
+
+    const nextRecords = new Map(previousRecords);
+    nextRecords.set(preferenceKey, createCloudPreferenceRecord(user.uid, clientIdRef.current, locale, previousPreference));
+    recordsRef.current = nextRecords;
+    const revision = localePreferenceRevision;
+    setStatus("syncing");
+    const queuedWrite = preferenceWriteQueueRef.current.catch(() => undefined).then(() => writeCloudRecords(services.db, user.uid, nextRecords, previousRecords));
+    preferenceWriteQueueRef.current = queuedWrite.then(() => undefined, () => undefined);
+    void queuedWrite.then(() => {
+      if (revision === localePreferenceRevisionRef.current) setStatus(typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "synced");
+    }).catch(() => {
+      if (revision !== localePreferenceRevisionRef.current) return;
+      recordsRef.current = previousRecords;
+      setErrorKey("A felhős szinkronizálás megszakadt. Ellenőrizd a kapcsolatot, majd próbáld újra.");
+      setStatus("error");
+    });
+  }, [configured, locale, localePreferenceRevision, ready, user]);
 
   useEffect(() => {
     if (!ready || !configured || !user || !activeRef.current || migration) return;
@@ -266,7 +308,7 @@ export function useCloudSync({ state, setState, ready, locale, onLocaleChange }:
     try {
       const selected = choice === "cloud" ? migration.cloudState : choice === "merge" && migration.cloudState ? mergeSoftStates(migration.localState, migration.cloudState) : migration.localState;
       if (!selected) return;
-      await activateCloud(selected, user.uid, services.db, migration.cloudRecords, choice !== "cloud", choice === "cloud" ? cloudLocale(migration.cloudRecords) : null);
+      await activateCloud(selected, user.uid, services.db, migration.cloudRecords, choice !== "cloud", choice === "cloud" ? cloudLocale(migration.cloudRecords) : null, localePreferenceRevisionRef.current);
     } catch {
       setErrorKey("A felhős adat-egyeztetés nem sikerült. Az eredeti helyi adatok változatlanok maradtak.");
       setStatus("error");

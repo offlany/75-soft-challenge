@@ -2,7 +2,6 @@ import { act, type ReactElement, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LanguageProvider } from "@/components/language-provider";
-import LanguageSwitcher from "@/components/language-switcher";
 import WelcomeScreen from "@/components/welcome-screen";
 import type { CloudSyncController } from "@/lib/use-cloud-sync";
 
@@ -63,7 +62,7 @@ describe("welcome entry and mobile language controls", () => {
   });
 
   it("switches language from a touch-sized control and persists the preference", async () => {
-    const rendered = await renderInto(<LanguageProvider><LanguageSwitcher /></LanguageProvider>);
+    const rendered = await renderInto(<LanguageProvider><WelcomeScreen sync={testSync()} onGuest={vi.fn()} /></LanguageProvider>);
     const englishButton = [...rendered.container.querySelectorAll("button")].find((button) => button.textContent === "EN");
     expect(englishButton?.getAttribute("aria-pressed")).toBe("false");
 
@@ -71,6 +70,15 @@ describe("welcome entry and mobile language controls", () => {
 
     expect(window.localStorage.getItem("75-soft-language")).toBe("en");
     expect(englishButton?.getAttribute("aria-pressed")).toBe("true");
+    expect(rendered.container.textContent).toContain("How would you like to continue?");
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+    expect(englishButton?.getAttribute("aria-pressed")).toBe("true");
+
+    const hungarianButton = [...rendered.container.querySelectorAll("button")].find((button) => button.textContent === "HU");
+    await act(async () => { hungarianButton?.click(); });
+    expect(window.localStorage.getItem("75-soft-language")).toBe("hu");
+    expect(hungarianButton?.getAttribute("aria-pressed")).toBe("true");
+    expect(rendered.container.textContent).toContain("Hogyan szeretnél továbbmenni?");
     await rendered.unmount();
   });
 });
