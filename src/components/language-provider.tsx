@@ -12,16 +12,12 @@ type LanguageContextValue = {
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [locale, setCurrentLocale] = useState<Locale>(() => {
-    const initial = readPreferredLocale() ?? detectBrowserLocale();
-    setLocale(initial);
-    return initial;
-  });
+  const [locale, setCurrentLocale] = useState<Locale>("hu");
 
   useEffect(() => {
     const preferred = readPreferredLocale() ?? detectBrowserLocale();
     setLocale(preferred);
-    setCurrentLocale(preferred);
+    setCurrentLocale((current) => current === preferred ? current : preferred);
   }, []);
 
   useEffect(() => {

@@ -95,6 +95,10 @@ The deployed URL is:
 https://offlany.github.io/75-soft-challenge/
 ```
 
+### Optional Google sign-in and cloud sync
+
+The Pages app remains fully usable in guest mode with IndexedDB. An optional Firebase configuration enables Google sign-in, user-scoped Firestore synchronization, offline Firestore caching, and an explicit local/cloud migration flow. Progress-picture image data remains browser-local; only its date and note are synchronized. See [`FIREBASE_SETUP.md`](FIREBASE_SETUP.md) for Firebase setup, GitHub Actions secrets, security rules, and emulator tests.
+
 
 ## Persistence and data flow
 
@@ -105,6 +109,7 @@ flowchart LR
   API --> SQLite[(Local SQLite file)]
   Mode -->|GitHub Pages static export| IDB[(Browser IndexedDB)]
   IDB --> Fallback[localStorage fallback]
+  UI -->|Optional signed-in mode| Cloud[User-scoped Firestore]
   UI --> JSON[JSON import / export]
 ```
 
@@ -118,15 +123,15 @@ The starter recipes and displayed text are generic synthetic content included to
 
 This repository intentionally excludes the original local database, progress pictures, exported JSON, and personal logs. The app can store habit, wellness-adjacent, and image data locally, so treat generated SQLite files, browser storage, and exports as private user data.
 
-The local API has no authentication, encryption, multi-user separation, or remote synchronization. Run it on a trusted machine and do not expose it to an untrusted network without adding an appropriate access-control layer.
+The local API has no authentication, encryption, or multi-user separation. Run it on a trusted machine and do not expose it to an untrusted network without adding an appropriate access-control layer. Optional signed-in mode uses Firebase Authentication and user-scoped Firestore rules; it does not upload progress-picture image data.
 
-The GitHub Pages build is static and does not provide a shared backend. Each visitor has an independent browser-local state; no server-side synchronization is implemented.
+The GitHub Pages build is static and does not provide a shared backend by itself. Without Firebase configuration, each visitor has an independent browser-local state. With Firebase configuration and Google sign-in, the signed-in user's structured challenge data can synchronize across trusted devices.
 
 ## Limitations
 
 - The local mode requires Node.js 24 because of the built-in `node:sqlite` API.
 - GitHub Pages cannot run the local SQLite API, so the static build uses browser storage instead.
-- Browser storage quotas and private-browsing restrictions can limit the size or lifetime of progress-image data.
+- Browser storage quotas and private-browsing restrictions can limit the size or lifetime of progress-image data; Firebase's offline cache should only be used on a trusted device.
 - Imported JSON uses a versioned envelope and rejects invalid values, duplicate IDs, dangling recipe/batch references, and oversized files.
 - The Pages workflow must be enabled in the repository settings with GitHub Actions as the Pages source before the first deployment.
 - Language detection falls back to English for non-Hungarian browser languages; the explicit HU/EN preference is stored in browser-local storage.

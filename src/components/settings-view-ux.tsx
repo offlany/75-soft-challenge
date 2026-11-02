@@ -5,6 +5,8 @@ import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { challengeEndDate, formatDate, isMealPlanDate, isValidCalendarDate, makeId, mealAssignmentsOutsideChallenge, type ChallengeSettings, type CustomHabit, type SoftState } from "@/lib/soft-challenge";
 import { MAX_BACKUP_BYTES, parseSoftState, serializeSoftState } from "@/lib/soft-state-io";
 import { useLanguage } from "./language-provider";
+import { AccountSection } from "./account-sync";
+import type { CloudSyncController } from "@/lib/use-cloud-sync";
 
 const baseHabitLabels = [["movement", "Mozgás", "30 perc mozgás"], ["reading", "Olvasás", "10 oldal vagy 30 perc"], ["water", "Víz", "Napi cél"], ["mindful", "Tudatos étkezés", "Figyelmesen, jelenléttel"]] as const;
 const habitCategories = ["Mozgás", "Táplálkozás", "Mentális jóllét", "Saját fókusz"];
@@ -15,7 +17,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <label className="field"><span>{t(label)}</span>{children}</label>;
 }
 
-export default function SettingsViewUx({ state, onUpdate }: { state: SoftState; onUpdate: (updater: (current: SoftState) => SoftState) => void }) {
+export default function SettingsViewUx({ state, onUpdate, account }: { state: SoftState; onUpdate: (updater: (current: SoftState) => SoftState) => void; account?: CloudSyncController }) {
   const { t } = useLanguage();
   const settings = state.settings;
   const [draft, setDraft] = useState<ChallengeSettings>({ ...settings, customHabits: settings.customHabits ?? [] });
@@ -120,6 +122,7 @@ export default function SettingsViewUx({ state, onUpdate }: { state: SoftState; 
   return <div className="page-enter">
     <div className="page-heading"><div><div className="eyebrow">{t("BEÁLLÍTÁSOK")}</div><h1>{t("Beállítások")}</h1></div>{notice ? <span className="saved-notice"><CheckCircle2 size={18} /> {t(notice)}</span> : <button className="primary-button" type="button" onClick={save}>{t("Változtatások mentése")} <Check size={18} /></button>}</div>
     <div className="settings-layout"><div>
+      <AccountSection sync={account} />
       <section className="card settings-card"><div className="card-heading"><div><div className="eyebrow">{t("ALAPADATOK")}</div><h3>{t("A kihívás idővonala")}</h3></div><span className="round-icon lavender"><CalendarDays size={19} /></span></div><div className="form-grid two"><Field label="Kezdő dátum"><input type="date" value={draft.startDate} onChange={(event) => setDraft({ ...draft, startDate: event.target.value })} /></Field><Field label="Befejezés"><input value={formatDate(challengeEndDate(draft.startDate), { year: "numeric", month: "long", day: "numeric" })} readOnly /></Field></div><p className="field-help">{t("A kihívás a kezdőnap helyi naptári napján indul; nincs külön napszakos indítás.")}</p></section>
       <section className="card settings-card custom-settings-card"><div className="card-heading"><div><div className="eyebrow">{t("SAJÁT SZOKÁSOK")}</div><h3>{t("Saját szokások")}</h3></div><span className="round-icon"><Plus size={20} /></span></div><form className="custom-habit-form settings-custom-form" onSubmit={addHabit}><input value={newHabitName} onChange={(event) => setNewHabitName(event.target.value)} placeholder={t("pl. 10 perc nyújtás")} aria-label={t("Saját szokás neve")} /><select value={newHabitCategory} onChange={(event) => setNewHabitCategory(event.target.value)} aria-label={t("Saját szokás kategóriája")}>{habitCategories.map((category) => <option key={category} value={category}>{t(category)}</option>)}</select><button type="submit" className="secondary-button" disabled={!newHabitName.trim()}><Plus size={18} /> {t("Hozzáadás")}</button></form><div className="settings-custom-list">{(draft.customHabits ?? []).length ? (draft.customHabits ?? []).map((habit) => editingHabitId === habit.id ? <div className="custom-habit-edit-row" key={habit.id}><input value={editingHabitName} onChange={(event) => setEditingHabitName(event.target.value)} aria-label={t("Saját szokás neve szerkesztéshez")} /><select value={editingHabitCategory} onChange={(event) => setEditingHabitCategory(event.target.value)} aria-label={t("Saját szokás kategóriája szerkesztéshez")}>{habitCategories.map((category) => <option key={category} value={category}>{t(category)}</option>)}</select><button type="button" className="primary-button" onClick={saveHabit}>{t("Mentés")}</button><button type="button" className="icon-button" onClick={() => setEditingHabitId("")} aria-label={t("Szerkesztés megszakítása")}>×</button></div> : <div className="settings-custom-row" key={habit.id}><span><strong>{habit.name}</strong><small>{t(habit.category)}</small></span><button type="button" className="icon-button" onClick={() => startEditHabit(habit)} aria-label={`${habit.name} ${t("szerkesztése")}`}><Edit3 size={18} /></button><button type="button" className="icon-button danger-icon" onClick={() => removeHabit(habit)} aria-label={`${habit.name} ${t("eltávolítása")}`}><Trash2 size={18} /></button></div>) : <p className="custom-habit-empty">{t("Még nincs saját szokásod. Adj hozzá egyet a napi naplóhoz.")}</p>}</div></section>
     </div><aside>

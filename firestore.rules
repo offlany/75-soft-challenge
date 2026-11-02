@@ -1,0 +1,37 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedInAs(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function validEnvelope(userId, recordId) {
+      return request.resource.data.keys().hasAll([
+          'schemaVersion', 'ownerUid', 'recordId', 'clientId',
+          'clientUpdatedAt', 'updatedAt', 'deleted', 'payload'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'schemaVersion', 'ownerUid', 'recordId', 'clientId',
+          'clientUpdatedAt', 'updatedAt', 'deleted', 'payload'
+        ])
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.ownerUid == userId
+        && request.resource.data.recordId == recordId
+        && request.resource.data.clientId is string
+        && request.resource.data.clientId.size() > 0
+        && request.resource.data.clientId.size() <= 200
+        && request.resource.data.clientUpdatedAt is int
+        && request.resource.data.clientUpdatedAt >= 0
+        && request.resource.data.updatedAt is timestamp
+        && request.resource.data.deleted is bool
+        && request.resource.data.payload is map;
+    }
+
+    match /users/{userId}/{collectionName}/{recordId} {
+      allow read: if signedInAs(userId);
+      allow create, update: if signedInAs(userId) && validEnvelope(userId, recordId);
+      allow delete: if false;
+    }
+  }
+}
