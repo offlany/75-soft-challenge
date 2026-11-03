@@ -127,6 +127,10 @@ export function hasLiveCloudRecords(records: CloudRecordMap): boolean {
   return [...records.values()].some((record) => !record.envelope.deleted);
 }
 
+export function isUnavailableCloudSnapshot(snapshot: CloudSnapshot): boolean {
+  return snapshot.fromCache && !hasLiveCloudRecords(snapshot.records);
+}
+
 export function cloudLocale(records: CloudRecordMap): AppLocale | null {
   const preferences = records.get(recordKey("meta", encodeId("preferences")));
   const value = preferences?.envelope.payload.locale;
@@ -196,12 +200,14 @@ function mergeRecordMaps(target: CloudRecordMap, source: CloudRecordMap): CloudR
 export async function loadCloudSnapshot(db: Firestore, uid: string, fallbackState?: SoftState): Promise<CloudSnapshot> {
   const records = new Map<CloudRecordKey, CloudRecord>();
   let fromCache = false;
+  let hasPendingWrites = false;
   for (const collectionName of CLOUD_COLLECTIONS) {
     const snapshot = await getDocs(query(firestoreCollection(db, "users", uid, collectionName)));
     fromCache ||= snapshot.metadata.fromCache;
+    hasPendingWrites ||= snapshot.metadata.hasPendingWrites;
     mergeRecordMaps(records, readFirestoreRecords(collectionName, snapshot.docs));
   }
-  return { records, state: recordsToState(records, fallbackState), fromCache, hasPendingWrites: false };
+  return { records, state: recordsToState(records, fallbackState), fromCache, hasPendingWrites };
 }
 
 export function subscribeToCloud(db: Firestore, uid: string, onChange: (snapshot: CloudSnapshot) => void, onError: (error: Error) => void, fallbackState?: SoftState): () => void {
@@ -295,6 +301,19 @@ export function mergeSoftStates(local: SoftState, cloud: SoftState): SoftState {
 export function hasMeaningfulLocalState(state: SoftState): boolean {
   const initial = createInitialState();
   return state.settings.active || stableSerialize(state.settings) !== stableSerialize(initial.settings) || state.recipes.some((recipe) => !seedRecipes.some((seed) => seed.id === recipe.id)) || state.batches.length > 0 || state.assignments.length > 0 || state.photos.length > 0 || Object.keys(state.logs).length > 0 || Object.keys(state.groceryStatus).length > 0 || state.manualGroceries.length > 0 || state.recipes.some((recipe) => recipe.favorite !== (seedRecipes.find((seed) => seed.id === recipe.id)?.favorite ?? false));
+}
+
+export type CloudRestoreDecision = "unavailable" | "migration" | "cloud" | "empty" | "local";
+
+export function decideCloudRestore(snapshot: CloudSnapshot, localState: SoftState, guestState: SoftState, intentionalSignIn: boolean, migrationCompleted: boolean): CloudRestoreDecision {
+  if (isUnavailableCloudSnapshot(snapshot)) return "unavailable";
+  const cloudExists = hasLiveCloudRecords(snapshot.records);
+  if (cloudExists && !snapshot.state) return "unavailable";
+  if (intentionalSignIn && hasMeaningfulLocalState(guestState) && !migrationCompleted) return "migration";
+  if (cloudExists && snapshot.state) return "cloud";
+  if (!intentionalSignIn && hasMeaningfulLocalState(localState)) return "empty";
+  if (intentionalSignIn && hasMeaningfulLocalState(guestState)) return "empty";
+  return "local";
 }
 
 export function softStatesEqual(left: SoftState, right: SoftState): boolean {

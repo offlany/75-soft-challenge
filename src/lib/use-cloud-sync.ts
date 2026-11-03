@@ -4,10 +4,10 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 import type { User } from "firebase/auth";
 import { authErrorKey, deleteCurrentGoogleAccount, signInWithGoogle, signOutFromGoogle, subscribeToAuth, type AuthErrorKey } from "./firebase-auth";
 import { getFirebaseServices, isFirebaseConfigured } from "./firebase-config";
-import { cloudLocale, createCloudPreferenceRecord, createCloudRecords, deleteCloudRecords, hasLiveCloudRecords, hasMeaningfulLocalState, loadCloudSnapshot, mergeSoftStates, recordKey, resolveLocalePreference, subscribeToCloud, softStatesEqual, stableSerialize, writeCloudRecords, type CloudRecordMap } from "./cloud-sync";
+import { cloudLocale, createCloudPreferenceRecord, createCloudRecords, decideCloudRestore, deleteCloudRecords, loadCloudSnapshot, mergeSoftStates, recordKey, resolveLocalePreference, subscribeToCloud, softStatesEqual, stableSerialize, writeCloudRecords, type CloudRecordMap } from "./cloud-sync";
 import { readPreferredLocale } from "./i18n";
 import { serializeSoftState } from "./soft-state-io";
-import type { AppLocale, SoftState } from "./soft-challenge";
+import { createInitialState, type AppLocale, type SoftState } from "./soft-challenge";
 
 export type CloudSyncStatus = "unavailable" | "guest" | "signing-in" | "syncing" | "synced" | "offline" | "error";
 export type MigrationChoice = "cloud" | "local" | "merge";
@@ -48,6 +48,7 @@ type CloudSyncProps = {
 };
 
 const CLIENT_ID_KEY = "75-soft-cloud-client-id";
+const MIGRATION_MARKERS_KEY = "75-soft-cloud-migration-markers";
 
 function clientId(): string {
   if (typeof window === "undefined") return "server";
@@ -61,6 +62,43 @@ function clientId(): string {
 function publicUser(user: User | null): CloudSyncController["user"] {
   if (!user) return null;
   return { uid: user.uid, displayName: user.displayName, email: user.email, photoURL: user.photoURL };
+}
+
+function shortHash(value: string): string {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) hash = ((hash * 33) ^ value.charCodeAt(index)) >>> 0;
+  return hash.toString(36);
+}
+
+function migrationFingerprint(state: SoftState): string {
+  const metadataOnlyPhotos = state.photos.map(({ dataUrl: _dataUrl, ...photo }) => photo);
+  return shortHash(stableSerialize({ ...state, photos: metadataOnlyPhotos }));
+}
+
+function migrationMarker(uid: string, state: SoftState): string {
+  return `${uid}:${migrationFingerprint(state)}`;
+}
+
+function hasCompletedMigration(uid: string, state: SoftState): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const markers = JSON.parse(window.localStorage.getItem(MIGRATION_MARKERS_KEY) ?? "[]");
+    return Array.isArray(markers) && markers.includes(migrationMarker(uid, state));
+  } catch {
+    return false;
+  }
+}
+
+function rememberCompletedMigration(uid: string, state: SoftState): void {
+  if (typeof window === "undefined") return;
+  try {
+    const current = JSON.parse(window.localStorage.getItem(MIGRATION_MARKERS_KEY) ?? "[]");
+    const markers = Array.isArray(current) ? current.filter((value): value is string => typeof value === "string") : [];
+    const marker = migrationMarker(uid, state);
+    if (!markers.includes(marker)) markers.push(marker);
+    window.localStorage.setItem(MIGRATION_MARKERS_KEY, JSON.stringify(markers.slice(-40)));
+  } catch {
+  }
 }
 
 export function useCloudSync({ state, setState, ready, locale, localePreferenceRevision, onLocaleChange }: CloudSyncProps): CloudSyncController {
@@ -82,26 +120,15 @@ export function useCloudSync({ state, setState, ready, locale, localePreferenceR
   const localeRef = useRef(locale);
   const localePreferenceRevisionRef = useRef(localePreferenceRevision);
   const onLocaleChangeRef = useRef(onLocaleChange);
-  const preferenceWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const cloudWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingLocalWriteRef = useRef(false);
+  const latestWriteRef = useRef(0);
+  const signInIntentRef = useRef(false);
 
   stateRef.current = state;
   localeRef.current = locale;
   localePreferenceRevisionRef.current = localePreferenceRevision;
   onLocaleChangeRef.current = onLocaleChange;
-
-  useEffect(() => {
-    if (!configured) return;
-    clientIdRef.current = clientId();
-    const unsubscribe = subscribeToAuth((nextUser) => {
-      setUser(nextUser);
-      setAuthReady(true);
-    });
-    return unsubscribe;
-  }, [configured]);
-
-  useEffect(() => {
-    if (!user && !activeRef.current) guestStateRef.current = state;
-  }, [state, user]);
 
   const stopCloud = useCallback(() => {
     unsubscribeRef.current?.();
@@ -110,6 +137,35 @@ export function useCloudSync({ state, setState, ready, locale, localePreferenceR
     activeUidRef.current = "";
     recordsRef.current = new Map();
     lastFingerprintRef.current = "";
+  }, []);
+
+  useEffect(() => {
+    if (!configured) return;
+    clientIdRef.current = clientId();
+    const unsubscribe = subscribeToAuth((nextUser) => {
+      if (!nextUser || (activeRef.current && activeUidRef.current !== nextUser.uid)) stopCloud();
+      setUser(nextUser);
+      setAuthReady(true);
+    });
+    return unsubscribe;
+  }, [configured, stopCloud]);
+
+  useEffect(() => {
+    if (!user && !activeRef.current) guestStateRef.current = state;
+  }, [state, user]);
+
+  const queueCloudWrite = useCallback((db: NonNullable<ReturnType<typeof getFirebaseServices>>["db"], uid: string, nextRecords: CloudRecordMap, previousRecords: CloudRecordMap) => {
+    const writeId = latestWriteRef.current + 1;
+    latestWriteRef.current = writeId;
+    pendingLocalWriteRef.current = true;
+    const queuedWrite = cloudWriteQueueRef.current.catch(() => undefined).then(() => writeCloudRecords(db, uid, nextRecords, previousRecords));
+    cloudWriteQueueRef.current = queuedWrite.then(() => undefined, () => undefined);
+    void queuedWrite.then(() => {
+      if (writeId === latestWriteRef.current) pendingLocalWriteRef.current = false;
+    }, () => {
+      if (writeId === latestWriteRef.current) pendingLocalWriteRef.current = false;
+    });
+    return queuedWrite;
   }, []);
 
   const activateCloud = useCallback(async (nextState: SoftState, uid: string, db: NonNullable<ReturnType<typeof getFirebaseServices>>["db"], baseline: CloudRecordMap, upload: boolean, preferredLocale: AppLocale | null = null, localeRevisionAtStart = localePreferenceRevisionRef.current) => {
@@ -124,24 +180,25 @@ export function useCloudSync({ state, setState, ready, locale, localePreferenceR
     setState(nextState);
     setErrorKey("");
     setStatus("syncing");
-    if (upload) await writeCloudRecords(db, uid, nextRecords, baseline);
+    if (upload) await queueCloudWrite(db, uid, nextRecords, baseline);
     if (preferredLocale && !storedLocale && localePreferenceRevisionRef.current === localeRevisionAtStart) onLocaleChangeRef.current?.(preferredLocale);
     setMigration(null);
     unsubscribeRef.current?.();
     unsubscribeRef.current = subscribeToCloud(db, uid, (snapshot) => {
       if (!activeRef.current || activeUidRef.current !== uid) return;
       recordsRef.current = snapshot.records;
-      if (snapshot.state && !softStatesEqual(snapshot.state, stateRef.current)) {
+      const hasLocalPendingChanges = pendingLocalWriteRef.current || snapshot.hasPendingWrites;
+      if (!hasLocalPendingChanges && snapshot.state && !softStatesEqual(snapshot.state, stateRef.current)) {
         lastFingerprintRef.current = stableSerialize(snapshot.state);
         setState(snapshot.state);
       }
-      setStatus(snapshot.hasPendingWrites ? "syncing" : snapshot.fromCache && typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "synced");
+      setStatus(hasLocalPendingChanges ? "syncing" : snapshot.fromCache && typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "synced");
     }, () => {
       setErrorKey("A felhős szinkronizálás megszakadt. Ellenőrizd a kapcsolatot, majd próbáld újra.");
       setStatus("error");
     }, nextState);
     setStatus(typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "synced");
-  }, [setState]);
+  }, [queueCloudWrite, setState]);
 
   useEffect(() => {
     if (!ready || !configured) return;
@@ -165,28 +222,33 @@ export function useCloudSync({ state, setState, ready, locale, localePreferenceR
       setStatus("syncing");
       setErrorKey("" as CloudSyncController["errorKey"]);
       try {
+        if (activeRef.current && activeUidRef.current !== user.uid) stopCloud();
         const localeRevisionAtStart = localePreferenceRevisionRef.current;
         const snapshot = await loadCloudSnapshot(services.db, user.uid, stateRef.current);
         if (cancelled) return;
         const localState = stateRef.current;
-        const localMeaningful = hasMeaningfulLocalState(localState);
-        const cloudExists = hasLiveCloudRecords(snapshot.records);
-        if (cloudExists && !snapshot.state) {
+        const guestState = guestStateRef.current;
+        const intentionalSignIn = signInIntentRef.current;
+        const cloudExists = snapshot.state !== null;
+        const decision = decideCloudRestore(snapshot, localState, guestState, intentionalSignIn, hasCompletedMigration(user.uid, guestState));
+        if (decision === "unavailable") {
           setErrorKey("A felhős adatok nem olvashatók, ezért nem töltöttem felül a helyi adatokat.");
           setStatus("error");
           return;
         }
-        if (cloudExists && snapshot.state && localMeaningful && !softStatesEqual(localState, snapshot.state)) {
-          setMigration({ kind: "both", localState, cloudState: snapshot.state, cloudRecords: snapshot.records });
+        if (decision === "migration") {
+          setMigration({ kind: cloudExists && snapshot.state ? "both" : "local-to-cloud", localState: guestState, cloudState: cloudExists ? snapshot.state : null, cloudRecords: snapshot.records });
           setStatus("syncing");
           return;
         }
-        if (!cloudExists && localMeaningful) {
-          setMigration({ kind: "local-to-cloud", localState, cloudState: null, cloudRecords: snapshot.records });
-          setStatus("syncing");
+        if (decision === "cloud" && snapshot.state) {
+          await activateCloud(snapshot.state, user.uid, services.db, snapshot.records, false, cloudLocale(snapshot.records), localeRevisionAtStart);
+          signInIntentRef.current = false;
           return;
         }
-        await activateCloud(cloudExists && snapshot.state ? snapshot.state : localState, user.uid, services.db, snapshot.records, !cloudExists, cloudExists ? cloudLocale(snapshot.records) : null, localeRevisionAtStart);
+        const nextState = decision === "empty" ? createInitialState() : localState;
+        await activateCloud(nextState, user.uid, services.db, snapshot.records, true, null, localeRevisionAtStart);
+        signInIntentRef.current = false;
       } catch {
         if (cancelled) return;
         setErrorKey("A felhős adat-egyeztetés nem sikerült. Az eredeti helyi adatok változatlanok maradtak.");
@@ -214,8 +276,7 @@ export function useCloudSync({ state, setState, ready, locale, localePreferenceR
     recordsRef.current = nextRecords;
     const revision = localePreferenceRevision;
     setStatus("syncing");
-    const queuedWrite = preferenceWriteQueueRef.current.catch(() => undefined).then(() => writeCloudRecords(services.db, user.uid, nextRecords, previousRecords));
-    preferenceWriteQueueRef.current = queuedWrite.then(() => undefined, () => undefined);
+    const queuedWrite = queueCloudWrite(services.db, user.uid, nextRecords, previousRecords);
     void queuedWrite.then(() => {
       if (revision === localePreferenceRevisionRef.current) setStatus(typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "synced");
     }).catch(() => {
@@ -224,7 +285,7 @@ export function useCloudSync({ state, setState, ready, locale, localePreferenceR
       setErrorKey("A felhős szinkronizálás megszakadt. Ellenőrizd a kapcsolatot, majd próbáld újra.");
       setStatus("error");
     });
-  }, [configured, locale, localePreferenceRevision, ready, user]);
+  }, [configured, locale, localePreferenceRevision, queueCloudWrite, ready, user]);
 
   useEffect(() => {
     if (!ready || !configured || !user || !activeRef.current || migration) return;
@@ -237,35 +298,41 @@ export function useCloudSync({ state, setState, ready, locale, localePreferenceR
     recordsRef.current = nextRecords;
     lastFingerprintRef.current = fingerprint;
     setStatus("syncing");
-    void writeCloudRecords(services.db, user.uid, nextRecords, previousRecords).then(() => {
+    void queueCloudWrite(services.db, user.uid, nextRecords, previousRecords).then(() => {
       setStatus(typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "synced");
     }).catch(() => {
+      recordsRef.current = previousRecords;
+      lastFingerprintRef.current = "";
       setErrorKey("A felhős szinkronizálás megszakadt. Ellenőrizd a kapcsolatot, majd próbáld újra.");
       setStatus("error");
     });
-  }, [configured, locale, migration, ready, state, user]);
+  }, [configured, locale, migration, queueCloudWrite, ready, state, user]);
 
   useEffect(() => {
     if (!configured || typeof window === "undefined") return;
     const setOffline = () => { if (activeRef.current) setStatus("offline"); };
-    const setOnline = () => { if (activeRef.current) setRetryNonce((value) => value + 1); };
+    const setOnline = () => { if (!activeRef.current) setRetryNonce((value) => value + 1); };
     window.addEventListener("offline", setOffline);
     window.addEventListener("online", setOnline);
     return () => { window.removeEventListener("offline", setOffline); window.removeEventListener("online", setOnline); };
   }, [configured]);
 
   const signIn = useCallback(async () => {
+    signInIntentRef.current = true;
+    guestStateRef.current = stateRef.current;
     setStatus("signing-in");
     setErrorKey("");
     try {
       await signInWithGoogle();
     } catch (error) {
+      signInIntentRef.current = false;
       setErrorKey(authErrorKey(error));
       setStatus("guest");
     }
   }, []);
 
   const signOut = useCallback(async () => {
+    signInIntentRef.current = false;
     await signOutFromGoogle();
   }, []);
 
@@ -276,6 +343,7 @@ export function useCloudSync({ state, setState, ready, locale, localePreferenceR
     setErrorKey("");
     stopCloud();
     try {
+      await cloudWriteQueueRef.current.catch(() => undefined);
       await deleteCloudRecords(services.db, user.uid);
       await signOutFromGoogle();
     } catch {
@@ -291,6 +359,7 @@ export function useCloudSync({ state, setState, ready, locale, localePreferenceR
     setErrorKey("");
     stopCloud();
     try {
+      await cloudWriteQueueRef.current.catch(() => undefined);
       await deleteCloudRecords(services.db, user.uid);
       await deleteCurrentGoogleAccount();
     } catch (error) {
@@ -309,6 +378,8 @@ export function useCloudSync({ state, setState, ready, locale, localePreferenceR
       const selected = choice === "cloud" ? migration.cloudState : choice === "merge" && migration.cloudState ? mergeSoftStates(migration.localState, migration.cloudState) : migration.localState;
       if (!selected) return;
       await activateCloud(selected, user.uid, services.db, migration.cloudRecords, choice !== "cloud", choice === "cloud" ? cloudLocale(migration.cloudRecords) : null, localePreferenceRevisionRef.current);
+      rememberCompletedMigration(user.uid, migration.localState);
+      signInIntentRef.current = false;
     } catch {
       setErrorKey("A felhős adat-egyeztetés nem sikerült. Az eredeti helyi adatok változatlanok maradtak.");
       setStatus("error");
@@ -328,8 +399,8 @@ export function useCloudSync({ state, setState, ready, locale, localePreferenceR
   return {
     configured,
     authReady,
-    isActive: activeRef.current,
-    isRestoring: configured && (!authReady || Boolean(user && !activeRef.current && !migration && status === "syncing")),
+    isActive: Boolean(user && activeRef.current && activeUidRef.current === user.uid),
+    isRestoring: configured && (!authReady || Boolean(user && (activeUidRef.current !== user.uid || (!activeRef.current && !migration && status === "syncing")))),
     user: publicUser(user),
     status,
     errorKey,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createInitialState } from "@/lib/soft-challenge";
-import { createCloudPreferenceRecord, createCloudRecords, hasMeaningfulLocalState, mergeSoftStates, recordsToState, recordKey, resolveLocalePreference, stableSerialize } from "@/lib/cloud-sync";
+import { createCloudPreferenceRecord, createCloudRecords, decideCloudRestore, hasMeaningfulLocalState, mergeSoftStates, recordsToState, recordKey, resolveLocalePreference, stableSerialize } from "@/lib/cloud-sync";
 
 describe("cloud sync state mapping", () => {
   it("maps granular state records and keeps progress photo binaries local", () => {
@@ -65,5 +65,38 @@ describe("cloud sync state mapping", () => {
     expect(record.collection).toBe("meta");
     expect(record.id).toBe("preferences");
     expect(record.envelope.payload).toEqual({ locale: "en" });
+  });
+
+  it("restores cloud state instead of opening migration for a returning user", () => {
+    const local = createInitialState();
+    local.settings.active = true;
+    local.logs["2026-11-01"] = { water: 1 };
+    const cloud = createInitialState();
+    cloud.settings.active = true;
+    cloud.logs["2026-11-01"] = { water: 2 };
+    const snapshot = { records: createCloudRecords(cloud, "uid-a", "client-a"), state: cloud, fromCache: false, hasPendingWrites: false };
+
+    expect(decideCloudRestore(snapshot, local, local, false, false)).toBe("cloud");
+    expect(decideCloudRestore(snapshot, local, local, true, false)).toBe("migration");
+    expect(decideCloudRestore(snapshot, local, local, true, true)).toBe("cloud");
+  });
+
+  it("does not initialize an empty account from an unavailable cached snapshot", () => {
+    const state = createInitialState();
+    state.settings.active = true;
+    const snapshot = { records: new Map(), state: null, fromCache: true, hasPendingWrites: false };
+
+    expect(decideCloudRestore(snapshot, state, state, false, false)).toBe("unavailable");
+  });
+
+  it("keeps an authenticated empty account separate from meaningful guest data", () => {
+    const guest = createInitialState();
+    guest.settings.active = true;
+    guest.logs["2026-11-01"] = { water: 1 };
+    const snapshot = { records: new Map(), state: null, fromCache: false, hasPendingWrites: false };
+
+    expect(decideCloudRestore(snapshot, guest, guest, false, false)).toBe("empty");
+    expect(decideCloudRestore(snapshot, guest, guest, true, false)).toBe("migration");
+    expect(decideCloudRestore(snapshot, guest, guest, true, true)).toBe("empty");
   });
 });
